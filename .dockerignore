@@ -1,0 +1,16 @@
+# Nunca meter secretos dentro de la imagen -- en produccion, las
+# variables de entorno las inyecta la Task Definition de ECS, no un
+# archivo .env horneado adentro del contenedor.
+.env
+
+.git/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/
+chroma_index/
+*.sqlite
+boveda_local/

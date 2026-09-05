@@ -1,0 +1,300 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Segundo Cerebro (Fase 6): una instancia EC2 con Docker, IP elastica fija,
+  y Caddy haciendo de proxy HTTPS automatico via sslip.io. Sin VPC propia
+  (usa la default de la cuenta), sin NAT Gateway, sin ALB, sin EFS -- una
+  sola maquina alcanza para el volumen de este proyecto.
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: >
+      Tamano de la instancia. t3.micro alcanza de sobra para ~3 mensajes/dia.
+      Verificar en la consola de AWS si sigue estando en el nivel "Always Free"
+      al momento de deployar -- si no, igual entra comodo en el credito del
+      Free Plan.
+  RepoDeGitHub:
+    Type: String
+    Default: Mel0nidas/SecondBrainProyect
+    Description: >
+      Repo de GitHub autorizado a deployar (formato usuario/repo). Solo el
+      workflow que corre DESDE este repo especifico va a poder asumir el rol
+      de deploy -- ningun otro repo de GitHub, ni siquiera tuyo, puede usarlo.
+
+Resources:
+  # ---------------------------------------------------------------------
+  # OIDC: le permite a GitHub Actions autenticarse contra tu cuenta de AWS
+  # con credenciales TEMPORALES, sin guardar ninguna clave de acceso como
+  # secreto de GitHub. Mismo espiritu que IAM Identity Center, pero para
+  # el robot de CI en vez de para vos.
+  # ---------------------------------------------------------------------
+  ProveedorOIDCGitHub:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+
+  RolDeployGitHub:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref ProveedorOIDCGitHub
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                # Solo el branch main de ESTE repo puede asumir este rol.
+                token.actions.githubusercontent.com:sub: !Sub repo:${RepoDeGitHub}:ref:refs/heads/main
+      Policies:
+        - PolicyName: SubirImagenYActualizarInstancia
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                Resource: !GetAtt RepositorioImagen.Arn
+              - Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                Resource:
+                  - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Instancia}
+                  - !Sub arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript
+              - Effect: Allow
+                Action: ssm:GetCommandInvocation
+                Resource: "*"
+
+  # ---------------------------------------------------------------------
+  # ECR: donde GitHub Actions sube la imagen de Docker en cada push
+  # ---------------------------------------------------------------------
+  RepositorioImagen:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: segundo-cerebro
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "Conservar solo las ultimas 5 imagenes",
+              "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountMoreThan",
+                "countNumber": 5
+              },
+              "action": { "type": "expire" }
+            }]
+          }
+
+  # ---------------------------------------------------------------------
+  # IAM: permisos de la instancia. Nada de llaves de acceso -- la
+  # instancia se autentica sola via su "rol", y nosotros nos conectamos
+  # a ella via SSM (Session Manager), sin SSH ni llaves que administrar.
+  # ---------------------------------------------------------------------
+  RolInstancia:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Da acceso por SSM Session Manager y SSM Run Command, sin abrir
+        # el puerto 22 ni manejar llaves SSH.
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: LeerImagenDeECR
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !GetAtt RepositorioImagen.Arn
+        - PolicyName: LeerSecretosDeParameterStore
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/segundo-cerebro/*
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm
+
+  PerfilInstancia:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref RolInstancia
+
+  # ---------------------------------------------------------------------
+  # Red: solo 80 (para el desafio de Let's Encrypt) y 443 (HTTPS real).
+  # Nada de 22 -- el acceso es por SSM, no por SSH.
+  # ---------------------------------------------------------------------
+  GrupoDeSeguridad:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Segundo Cerebro -- solo HTTP/HTTPS entrantes
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  # ---------------------------------------------------------------------
+  # La instancia. Usa la VPC y subred default de la cuenta (ya tienen
+  # salida a internet via Internet Gateway, sin necesitar NAT).
+  # ---------------------------------------------------------------------
+  Instancia:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      # Siempre la AMI de Amazon Linux 2023 mas reciente -- este parametro
+      # "magico" lo resuelve AWS al momento del deploy, no hay que buscar
+      # ni actualizar un ID de AMI a mano nunca.
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
+      IamInstanceProfile: !Ref PerfilInstancia
+      SecurityGroupIds:
+        - !GetAtt GrupoDeSeguridad.GroupId
+      Tags:
+        - Key: Name
+          Value: segundo-cerebro
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+
+          # --- Docker ---
+          dnf install -y docker
+          systemctl enable --now docker
+          curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+            -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+
+          mkdir -p /opt/segundo-cerebro/data/boveda /opt/segundo-cerebro/data/chroma
+
+          # --- Dominio HTTPS automatico: IP elastica -> nombre sslip.io ---
+          # Ej: 52.1.2.3 se transforma en 52-1-2-3.sslip.io
+          IP="${ElasticIP}"
+          DOMINIO="$(echo "$IP" | tr '.' '-').sslip.io"
+          echo "Dominio del bot: https://$DOMINIO"
+
+          cat > /opt/segundo-cerebro/Caddyfile <<EOF
+          $DOMINIO {
+              reverse_proxy app:8000
+          }
+          EOF
+
+          # --- Secretos: se leen de SSM Parameter Store, nunca del template ---
+          # (Melo los crea a mano una vez con "aws ssm put-parameter", ver guia)
+          for CLAVE in ANTHROPIC_API_KEY VOYAGE_API_KEY TELEGRAM_BOT_TOKEN \
+                       TELEGRAM_WEBHOOK_SECRET TELEGRAM_CHAT_ID_AUTORIZADO; do
+            VALOR=$(aws ssm get-parameter --name "/segundo-cerebro/$CLAVE" \
+              --with-decryption --query Parameter.Value --output text \
+              --region ${AWS::Region} || echo "")
+            echo "$CLAVE=$VALOR" >> /opt/segundo-cerebro/.env
+          done
+          echo "RUTA_BOVEDA_OBSIDIAN=/data/boveda" >> /opt/segundo-cerebro/.env
+          echo "RUTA_INDICE_CHROMA=/data/chroma" >> /opt/segundo-cerebro/.env
+          echo "RUTA_CHECKPOINTS_SQLITE=/data/checkpoints.sqlite" >> /opt/segundo-cerebro/.env
+          chmod 600 /opt/segundo-cerebro/.env
+
+          cat > /opt/segundo-cerebro/docker-compose.yml <<EOF
+          services:
+            app:
+              image: ${RepositorioImagen.RepositoryUri}:latest
+              env_file: .env
+              volumes:
+                - ./data:/data
+              restart: unless-stopped
+            caddy:
+              image: caddy:2
+              ports:
+                - "80:80"
+                - "443:443"
+              volumes:
+                - ./Caddyfile:/etc/caddyfile:ro
+                - caddy_data:/data
+              command: caddy run --config /etc/caddyfile
+              restart: unless-stopped
+          volumes:
+            caddy_data:
+          EOF
+
+          # Login a ECR y primer intento de levantar todo. Si todavia no
+          # se pusheo ninguna imagen (primer deploy de la infra, antes del
+          # primer deploy de la app), esto falla y no pasa nada -- se
+          # reintenta a mano despues del primer push (ver guia de deploy).
+          aws ecr get-login-password --region ${AWS::Region} | \
+            docker login --username AWS --password-stdin ${RepositorioImagen.RepositoryUri}
+          cd /opt/segundo-cerebro
+          docker-compose pull || true
+          docker-compose up -d || true
+
+  # ---------------------------------------------------------------------
+  # IP fija: sin esto, la IP publica cambiaria en cada reinicio de la
+  # instancia, y habria que re-registrar el webhook de Telegram cada vez.
+  # ---------------------------------------------------------------------
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  AsociacionIP:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref Instancia
+      AllocationId: !GetAtt ElasticIP.AllocationId
+
+Outputs:
+  IPElastica:
+    Description: IP publica fija de la instancia
+    Value: !Ref ElasticIP
+  DominioHTTPS:
+    Description: URL del webhook (usar esta con setWebhook de Telegram)
+    Value: !Sub
+      - "https://${Dominio}.sslip.io/webhook/telegram"
+      - Dominio: !Join ["-", !Split [".", !Ref ElasticIP]]
+  RepositorioECR:
+    Description: URI del repositorio de ECR, para el workflow de GitHub Actions
+    Value: !GetAtt RepositorioImagen.RepositoryUri
+  InstanceId:
+    Description: ID de la instancia, para el workflow de GitHub Actions (SSM)
+    Value: !Ref Instancia
+  RolDeployGitHubArn:
+    Description: ARN del rol que va a usar el workflow de GitHub Actions
+    Value: !GetAtt RolDeployGitHub.Arn

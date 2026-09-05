@@ -31,3 +31,50 @@ jobs:
 
       - name: Tests (pytest)
         run: uv run pytest
+
+  deploy:
+    # Solo en push a main (no en pull requests), y solo si test paso.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      # Necesario para que GitHub emita el token OIDC que AWS valida --
+      # sin esto, "aws-actions/configure-aws-credentials" no funciona.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar credenciales de AWS (OIDC, sin secretos guardados)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login a ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build y push de la imagen
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: segundo-cerebro
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t "$REGISTRY/$REPOSITORY:$IMAGE_TAG" -t "$REGISTRY/$REPOSITORY:latest" .
+          docker push "$REGISTRY/$REPOSITORY:$IMAGE_TAG"
+          docker push "$REGISTRY/$REPOSITORY:latest"
+
+      - name: Actualizar la instancia via SSM
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["cd /opt/segundo-cerebro && docker-compose pull && docker-compose up -d"]' \
+            --query "Command.CommandId" --output text)
+
+          # Espera a que termine y falla el workflow si el comando fallo,
+          # en vez de reportar "exito" aunque el deploy real haya roto.
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ vars.EC2_INSTANCE_ID }}"

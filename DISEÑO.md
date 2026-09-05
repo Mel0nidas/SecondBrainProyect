@@ -14,7 +14,7 @@
 | Modelo de razonamiento | **Claude** — Haiku para ruteo, Sonnet para razonamiento/escritura | Un solo modelo para todo | El router corre en cada mensaje: usar el modelo caro ahí es tirar plata. Ver §4.2 |
 | Mensajería | **Telegram Bot API** (webhook) | WhatsApp | Meta cobra mensajes de servicio desde oct-2026; Telegram es gratis y sin plantillas |
 | Framework web | **FastAPI** | Handler de Lambda pelado, Flask | Tipado, docs automáticas, testeable, currícula fuerte |
-| Deploy inicial | **AWS Lambda + Mangum + API Gateway** | Fargate | Costo ~$0 en reposo. Fargate queda como migración opcional de fase 8 para mostrar Docker |
+| Deploy inicial | **AWS EC2** (una instancia, Docker, IP elástica fija) | Fargate + ALB, Lambda + Mangum | Segunda revisión en Fase 6: Fargate resolvía el costo del NAT Gateway, pero necesita un ALB (~$16-25/mes) para tener una URL estable, porque la IP pública de una tarea cambia en cada reinicio. Una sola instancia EC2 con IP elástica nativa resuelve lo mismo sin ALB, y de paso no necesita EFS (una sola máquina no necesita disco compartido en red — el EBS de la propia instancia alcanza) |
 | Conexión agente↔bóveda | **Servidor MCP propio** (Python SDK oficial) | Código Python a medida dentro del grafo | MCP es el estándar 2026; escribir un server propio es pieza de portfolio |
 | Conexión agente↔Telegram | **Directa (webhook + httpx)**, NO vía MCP | MCP server para Telegram | Telegram es la puerta de entrada, no una tool del agente. Meterle MCP es complejidad sin ganancia. El agente responde por el mismo canal que recibió |
 | Almacenamiento de notas | **Bóveda Obsidian** (markdown plano) en servidor AWS, headless | Base de datos | Ya decidido en sesiones anteriores; capa visual gratis |
@@ -24,7 +24,8 @@
 | Observabilidad | **LangSmith tier gratuito** (5.000 trazas/mes) | Langfuse self-hosted | Dos líneas de config, cero infra propia. A ~360 llamadas/mes sobra margen |
 | CI/CD | **GitHub Actions**: ruff + mypy + pytest + deploy en push a main | Deploy manual | Es el gap de "experiencia de producción" |
 | Gestión de dependencias | **uv** + `pyproject.toml` | pip + requirements.txt | Estándar moderno 2026, rápido, lockfile reproducible |
-| Python | **3.12** | 3.13 | Compatibilidad garantizada con todo el stack (Lambda runtime incluido) |
+| Python | **3.12** | 3.13 | Compatibilidad garantizada con todo el stack |
+| HTTPS del webhook | **Caddy + sslip.io** | ALB + ACM, dominio propio | Telegram exige HTTPS. sslip.io da un dominio automático a partir de la IP elástica (ej. 52-1-2-3.sslip.io), y Caddy consigue y renueva el certificado de Let's Encrypt solo, sin tocar código de la app. Cero costo, cero dominio que comprar |
 | Imágenes | **Sí, desde fase 7**: fotos por Telegram → visión de Claude → nota en la bóveda | Ignorar imágenes | Caso de uso real de un segundo cerebro (pizarras, tickets, apuntes en papel) |
 
 ---
@@ -36,7 +37,7 @@
 ```mermaid
 flowchart LR
     U[Melo - Telegram] -->|mensaje/foto| TG[Telegram Bot API]
-    TG -->|webhook POST| API[FastAPI en Lambda]
+    TG -->|webhook POST| API[FastAPI en EC2, atras de Caddy]
     API --> G[Grafo LangGraph]
     G <-->|MCP stdio| OBS[MCP Server Obsidian]
     OBS <--> V[(Bóveda .md)]
@@ -154,7 +155,14 @@ segundo-cerebro/
     unit/                    ← nodos con LLM mockeado, MCP server, parsers
     eval/mensajes.jsonl      ← los 20-30 mensajes etiquetados (§6)
   .github/workflows/ci.yml
-  infra/                     ← template SAM o Terraform (fase 6, elegir SAM por simpleza)
+  infra/                     ← template de CloudFormation (EC2, IP elastica, ECR,
+                               IAM), desplegado con `sam deploy --guided` -- ya no
+                               hay recursos "serverless" de SAM en si (eso era para
+                               Lambda), pero el CLI sigue sirviendo como forma simple
+                               de deployar CloudFormation paso a paso
+    docker-compose.yml        ← app + Caddy corriendo juntos en la instancia
+    Caddyfile                 ← config de Caddy: dominio sslip.io + proxy a la app
+  Dockerfile                 ← imagen de la app
 ```
 
 ---
@@ -208,15 +216,15 @@ Los 4 nodos de §2.2 con sus prompts en `prompts/`. El Archivista y Bibliotecari
 ✅ *Mensaje desde el celular de Melo → respuesta del bot; mensaje desde otro chat_id → silencio.*
 
 **FASE 6 — AWS + CI/CD completo (3-4 sesiones, la fase con más fricción esperada)**
-Cuenta AWS con presupuesto/alarma de facturación configurada ANTES que nada. SAM: Lambda (FastAPI+Mangum) + API Gateway. Bóveda+Chroma+SQLite en almacenamiento persistente (EFS montado en Lambda — verificar al construir; si la fricción es alta, adelantar acá la alternativa Fargate+EBS). Webhook de Telegram apuntado a la URL real. GitHub Actions deployando en push a main.
+Cuenta AWS con presupuesto/alarma de facturación configurada ANTES que nada (✅ hecho: Free Plan + MFA en root + alarma de $5/mes). IAM Identity Center para credenciales locales, sin access keys de larga duración (✅ hecho). Dockerfile de la app (✅ hecho, probado local con `docker build`/`docker run`). Repositorio ECR para la imagen. Una instancia EC2 (Amazon Linux, Docker) con IP elástica fija, acceso por SSM (sin SSH). Caddy corriendo al lado de la app (docker-compose) haciendo de proxy HTTPS automático via sslip.io. Bóveda+Chroma+SQLite en el disco de la propia instancia (EBS, no hace falta EFS con una sola máquina). Secretos en AWS Systems Manager Parameter Store (SecureString), nunca en el template ni en el repo. Webhook de Telegram apuntado a la URL real. GitHub Actions deployando en push a main (build de la imagen, push a ECR, SSM Run Command para actualizar el contenedor en la instancia).
 ✅ *El bot responde con la compu de Melo apagada, y un push a main llega solo a producción.*
 
 **FASE 7 — Imágenes (1-2 sesiones)**
 Flujo completo de §2.6.
 ✅ *Foto de una pizarra/apunte por Telegram → nota con transcripción en `30-imagenes/`, encontrable después por búsqueda semántica.*
 
-**FASE 8 (opcional, para portfolio) — Migración a Fargate**
-Dockerfile + servicio Fargate, mismo código. Solo si se quiere el badge de "Docker + contenedores en AWS".
+**FASE 8 (opcional, para portfolio)**
+Idea a definir cuando se llegue ahí -- por ejemplo, un dominio propio en vez de depender de sslip.io, o migrar a Fargate/ECS mas adelante si el proyecto crece a necesitar mas de una instancia.
 
 **FASE 9 — Evaluación + Digestor (2-3 sesiones)**
 Armar `eval/mensajes.jsonl` (§6) con mensajes reales acumulados durante las fases 5-7. Script que corre el set contra el Router y mide tasa de acierto; se incorpora al CI como test de regresión (falla si el acierto baja del umbral que fije la primera medición). Después, y solo después, el agente Digestor semanal vía EventBridge.
@@ -237,7 +245,7 @@ Armar `eval/mensajes.jsonl` (§6) con mensajes reales acumulados durante las fas
 ## PARTE 7 — PRIVACIDAD (los dos tramos identificados, ahora con decisión)
 
 1. **Datos que pasan por el LLM externo**: aceptado como trade-off consciente para un asistente personal. Mitigación: solo se envía al modelo el mensaje del turno + snippets puntuales (patrón mensajero), nunca la bóveda entera.
-2. **Dónde vive la bóveda**: en el servidor AWS de Melo (cuenta propia, volumen cifrado en reposo — EFS/EBS lo traen por defecto, verificar que esté activado). Sincronización a dispositivos por el mecanismo elegido en la decisión de headless. No hay terceros adicionales con acceso al contenido.
+2. **Dónde vive la bóveda**: en el disco de la instancia EC2 de Melo (cuenta propia, volumen EBS cifrado en reposo por defecto). Sincronización a dispositivos por el mecanismo elegido en la decisión de headless. No hay terceros adicionales con acceso al contenido.
 
 ---
 

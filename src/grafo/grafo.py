@@ -4,6 +4,7 @@
 Esto reemplaza el grafo de 2 nodos de la Fase 1 (que solo saludaba).
 """
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -36,7 +37,18 @@ def _despues_de_directo(estado: Estado) -> str:
     return END
 
 
-def construir_grafo() -> CompiledStateGraph[Estado, None, Estado, Estado]:
+def construir_grafo(
+    checkpointer: BaseCheckpointSaver[str] | None = None,
+) -> CompiledStateGraph[Estado, None, Estado, Estado]:
+    """Arma y compila el grafo.
+
+    ``checkpointer`` guarda el estado de cada ejecucion para poder
+    pausarla y seguirla despues -- imprescindible para que
+    ``interrupt()`` (usado en "/probar_confirmacion", Fase 5) funcione.
+    Sin checkpointer (el default, usado por la CLI de las Fases 1-4),
+    el grafo corre de punta a punta en una sola llamada, sin memoria
+    entre invocaciones.
+    """
     grafo = StateGraph(Estado)
 
     # Los "type: ignore" tapan una limitacion conocida de los overloads
@@ -57,4 +69,4 @@ def construir_grafo() -> CompiledStateGraph[Estado, None, Estado, Estado]:
     grafo.add_edge("bibliotecario", END)
     grafo.add_edge("resumen_parcial", END)
 
-    return grafo.compile()
+    return grafo.compile(checkpointer=checkpointer)

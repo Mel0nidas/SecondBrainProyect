@@ -1,7 +1,7 @@
 """Test del nodo Bibliotecario.
 
-Se mockean el modelo (Claude) y el cliente MCP (``llamar_herramienta``)
--- este test no toca disco ni arranca ningun proceso.
+Se mockean el modelo (Claude) y ``buscar_semantico`` (Chroma + Voyage)
+-- este test no toca disco ni hace llamadas de red.
 """
 
 from unittest.mock import patch
@@ -16,15 +16,15 @@ class _RespuestaFalsa:
 
 def test_bibliotecario_responde_con_lo_que_encuentra() -> None:
     with (
-        patch("grafo.nodos.bibliotecario.llamar_herramienta") as llamar_mock,
+        patch("grafo.nodos.bibliotecario.buscar_semantico") as buscar_mock,
         patch("grafo.nodos.bibliotecario.ChatAnthropic") as modelo_mock,
     ):
-        llamar_mock.return_value = ["# Idea sobre Redis\n\nRedis podria servir como cache."]
+        buscar_mock.return_value = ["Redis podria servir como cache."]
         modelo_mock.return_value.invoke.return_value = _RespuestaFalsa()
 
         resultado = bibliotecario(Estado(mensaje_usuario="que guarde sobre Redis?"))
 
-    llamar_mock.assert_called_once_with("buscar_por_titulo", consulta="que guarde sobre Redis?")
+    buscar_mock.assert_called_once_with("que guarde sobre Redis?")
 
     respuesta = resultado["respuesta_final"]
     assert isinstance(respuesta, str)
@@ -33,10 +33,10 @@ def test_bibliotecario_responde_con_lo_que_encuentra() -> None:
 
 def test_bibliotecario_sin_resultados_no_llama_al_modelo() -> None:
     with (
-        patch("grafo.nodos.bibliotecario.llamar_herramienta") as llamar_mock,
+        patch("grafo.nodos.bibliotecario.buscar_semantico") as buscar_mock,
         patch("grafo.nodos.bibliotecario.ChatAnthropic") as modelo_mock,
     ):
-        llamar_mock.return_value = []
+        buscar_mock.return_value = []
 
         resultado = bibliotecario(Estado(mensaje_usuario="algo que nunca guarde"))
 

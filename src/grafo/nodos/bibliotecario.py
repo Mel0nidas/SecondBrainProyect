@@ -1,22 +1,25 @@
 """Nodo Bibliotecario (DISEÑO.md §2.2): responde consultas, solo lectura.
 
-Desde la Fase 3, busca en la boveda REAL de Obsidian via el cliente
-MCP. La busqueda semantica real (Chroma + embeddings) todavia no existe
--- eso llega en la Fase 4. Por ahora usa "buscar_por_titulo" del
-servidor MCP, que es una busqueda simple por palabras clave.
+Desde la Fase 4, busca por significado (Chroma + embeddings de Voyage,
+ver ``rag/indexar.py``) en vez de por palabras clave exactas -- esto es
+lo que permite que "¿que dije sobre plata?" encuentre una nota que
+habla de "presupuesto", aunque no compartan ninguna palabra. A
+diferencia de las notas (que pasan por el servidor MCP), el indice de
+Chroma se consulta directo: es una libreria embebida, no un servicio
+externo.
 """
 
 from langchain_anthropic import ChatAnthropic
 
 from grafo.estado import Estado
 from grafo.utilidades import cargar_prompt
-from mcp_obsidian.cliente import llamar_herramienta
+from rag.indexar import buscar_semantico
 
 MODELO_BIBLIOTECARIO = "claude-sonnet-4-6"
 
 
 def bibliotecario(estado: Estado) -> dict[str, object]:
-    snippets = llamar_herramienta("buscar_por_titulo", consulta=estado.mensaje_usuario)
+    snippets = buscar_semantico(estado.mensaje_usuario)
 
     if not snippets:
         return {

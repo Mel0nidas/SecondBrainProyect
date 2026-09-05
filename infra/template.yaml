@@ -16,11 +16,12 @@ Parameters:
       Free Plan.
   RepoDeGitHub:
     Type: String
-    Default: Mel0nidas/SecondBrainProyect
-    Description: >
-      Repo de GitHub autorizado a deployar (formato usuario/repo). Solo el
-      workflow que corre DESDE este repo especifico va a poder asumir el rol
-      de deploy -- ningun otro repo de GitHub, ni siquiera tuyo, puede usarlo.
+    Default: SecondBrainProyect
+    Description: Nombre del repo (sin el usuario/org).
+  OrgDeGitHub:
+    Type: String
+    Default: Mel0nidas
+    Description: Usuario u organizacion de GitHub dueño del repo.
 
 Resources:
   # ---------------------------------------------------------------------
@@ -52,8 +53,14 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                # Solo el branch main de ESTE repo puede asumir este rol.
-                token.actions.githubusercontent.com:sub: !Sub repo:${RepoDeGitHub}:ref:refs/heads/main
+                # Dos patrones porque GitHub cambio el formato del "sub" el
+                # 15/07/2026: los repos viejos mandan el formato clasico
+                # (org/repo), los nuevos uno con IDs numericos internos
+                # (org@ID/repo@ID). Este repo es nuevo, pero se dejan los
+                # dos por las dudas / a prueba de futuro.
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${OrgDeGitHub}/${RepoDeGitHub}:ref:refs/heads/main
+                  - !Sub repo:${OrgDeGitHub}@*/${RepoDeGitHub}@*:ref:refs/heads/main
       Policies:
         - PolicyName: SubirImagenYActualizarInstancia
           PolicyDocument:

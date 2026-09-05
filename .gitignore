@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Variables de entorno con keys reales (nunca subir esto)
+.env

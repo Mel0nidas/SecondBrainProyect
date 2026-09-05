@@ -1,17 +1,18 @@
-"""Punto de entrada de consola: `uv run python -m grafo`.
+"""Punto de entrada de consola: `uv run python -m grafo` (Fase 2).
 
 Lee las variables de entorno del archivo .env (tus API keys), arma el
-grafo, le manda un mensaje a Claude y muestra la respuesta.
+grafo (Router + Archivista + Bibliotecario + directo), y le pasa el
+mensaje que le pasaste por linea de comandos.
 """
 
 import sys
 
 from dotenv import load_dotenv
 
-from grafo.estado import EstadoSaludo
+from grafo.estado import Estado
 from grafo.grafo import construir_grafo
 
-MENSAJE_POR_DEFECTO = "Decime en una sola oracion que sos un grafo de LangGraph."
+MENSAJE_POR_DEFECTO = "/ayuda"
 
 
 def main() -> None:
@@ -20,10 +21,14 @@ def main() -> None:
     mensaje = " ".join(sys.argv[1:]) or MENSAJE_POR_DEFECTO
 
     grafo = construir_grafo()
-    estado_final = grafo.invoke(EstadoSaludo(mensaje_usuario=mensaje))
+    # recursion_limit generoso: el corte real lo hace nuestro Presupuesto
+    # (verificar_presupuesto), no el limite de seguridad generico de
+    # langgraph -- si no, langgraph podria cortar primero con un error
+    # feo en vez de nuestro resumen prolijo.
+    estado_final = grafo.invoke(Estado(mensaje_usuario=mensaje), config={"recursion_limit": 100})
 
-    print(f"Vos preguntaste: {mensaje}")
-    print(f"Claude respondio: {estado_final['respuesta']}")
+    print(f"Vos escribiste: {mensaje}")
+    print(estado_final["respuesta_final"])
 
 
 if __name__ == "__main__":

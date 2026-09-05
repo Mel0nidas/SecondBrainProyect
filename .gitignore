@@ -11,3 +11,6 @@ wheels/
 
 # Variables de entorno con keys reales (nunca subir esto)
 .env
+
+# Boveda local de prueba (Fase 2) -- contenido personal, no codigo
+boveda_local/

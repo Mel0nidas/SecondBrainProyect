@@ -1,0 +1,33 @@
+"""Nodo Bibliotecario (DISEÑO.md §2.2): responde consultas, solo lectura.
+
+La busqueda semantica real (Chroma + embeddings) llega en la Fase 4.
+Por ahora usa ``buscar_notas``, una busqueda simple por palabras clave
+sobre la misma boveda local que escribe el Archivista.
+"""
+
+from langchain_anthropic import ChatAnthropic
+
+from grafo.boveda_local import buscar_notas
+from grafo.estado import Estado
+from grafo.utilidades import cargar_prompt
+
+MODELO_BIBLIOTECARIO = "claude-sonnet-4-6"
+
+
+def bibliotecario(estado: Estado) -> dict[str, object]:
+    snippets = buscar_notas(estado.mensaje_usuario)
+
+    if not snippets:
+        return {
+            "snippets": [],
+            "respuesta_final": "No encontre nada guardado relacionado con eso todavia.",
+        }
+
+    modelo = ChatAnthropic(model=MODELO_BIBLIOTECARIO)  # type: ignore[call-arg]
+    prompt = cargar_prompt("bibliotecario")
+    contexto = "\n\n---\n\n".join(snippets)
+    respuesta = modelo.invoke(
+        f"{prompt}\n\nFragmentos encontrados:\n{contexto}\n\nPregunta: {estado.mensaje_usuario}"
+    )
+
+    return {"snippets": snippets, "respuesta_final": str(respuesta.content)}

@@ -1,53 +1,60 @@
-"""Grafo minimo de 2 nodos (Fase 1: "hola mundo" de LangGraph).
+"""Grafo de la Fase 2 (DISEÑO.md §2.2): Router + Archivista + Bibliotecario
++ respuesta directa, con corte por presupuesto.
 
-Un "nodo" es simplemente una funcion Python que recibe el estado actual
-y devuelve los campos que quiere actualizar. El grafo conecta nodos con
-"edges" (flechas) que dicen que nodo sigue a cual. Este grafo no tiene
-routing, herramientas ni memoria -- eso llega en la Fase 2 en adelante
-(ver DISEÑO.md, PARTE 5).
+Esto reemplaza el grafo de 2 nodos de la Fase 1 (que solo saludaba).
 """
 
-from langchain_anthropic import ChatAnthropic
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from grafo.estado import EstadoSaludo
+from grafo.estado import Estado, Intencion
+from grafo.nodos.archivista import archivista
+from grafo.nodos.bibliotecario import bibliotecario
+from grafo.nodos.directo import directo
+from grafo.nodos.presupuesto import resumen_parcial, verificar_presupuesto
+from grafo.nodos.router import router
 
-# Verificar en la doc de Anthropic cual es el Sonnet vigente al construir
-# (DISEÑO.md §4.2) -- no hardcodear esto en mas de un lugar del codigo.
-MODELO = "claude-sonnet-4-6"
+
+def _despues_de_verificar(estado: Estado) -> str:
+    """Arista condicional: decide a donde ir despues de contar el paso."""
+    if estado.presupuesto.excedido():
+        return "resumen_parcial"
+    if estado.intencion in (Intencion.CAPTURAR, Intencion.TAREA):
+        return "archivista"
+    if estado.intencion == Intencion.CONSULTAR:
+        return "bibliotecario"
+    return "directo"
 
 
-def preparar(estado: EstadoSaludo) -> dict[str, str]:
-    """Nodo 1: por ahora solo deja pasar el mensaje.
+def _despues_de_directo(estado: Estado) -> str:
+    """Solo el comando de prueba "/test_loop" vuelve a pasar por el contador.
 
-    Esta como nodo separado para probar que el grafo puede tener mas de
-    un paso encadenado, aunque en esta fase no transforma nada todavia.
+    Todo el resto de los mensajes termina el grafo en este punto.
     """
-    return {"mensaje_usuario": estado.mensaje_usuario}
+    if estado.mensaje_usuario.strip() == "/test_loop" and not estado.presupuesto.excedido():
+        return "verificar_presupuesto"
+    return END
 
 
-def preguntar_a_claude(estado: EstadoSaludo) -> dict[str, str]:
-    """Nodo 2: le manda el mensaje a Claude y guarda la respuesta."""
-    modelo = ChatAnthropic(model=MODELO)  # type: ignore[call-arg]
-    respuesta = modelo.invoke(estado.mensaje_usuario)
-    return {"respuesta": str(respuesta.content)}
+def construir_grafo() -> CompiledStateGraph[Estado, None, Estado, Estado]:
+    grafo = StateGraph(Estado)
 
+    # Los "type: ignore" tapan una limitacion conocida de los overloads
+    # de langgraph con mypy estricto -- no es un error real (ver Fase 1).
+    grafo.add_node("router", router)  # type: ignore[call-overload]
+    grafo.add_node("verificar_presupuesto", verificar_presupuesto)  # type: ignore[call-overload]
+    grafo.add_node("archivista", archivista)  # type: ignore[call-overload]
+    grafo.add_node("bibliotecario", bibliotecario)  # type: ignore[call-overload]
+    grafo.add_node("directo", directo)  # type: ignore[call-overload]
+    grafo.add_node("resumen_parcial", resumen_parcial)  # type: ignore[call-overload]
 
-def construir_grafo() -> CompiledStateGraph[EstadoSaludo, None, EstadoSaludo, EstadoSaludo]:
-    """Arma y compila el grafo: preparar -> preguntar_a_claude -> fin.
+    grafo.set_entry_point("router")
+    grafo.add_edge("router", "verificar_presupuesto")
+    grafo.add_conditional_edges("verificar_presupuesto", _despues_de_verificar)
+    grafo.add_conditional_edges("directo", _despues_de_directo)
 
-    "Compilar" en LangGraph valida que el grafo este bien formado (todos
-    los nodos conectados, sin callejones sin salida) y devuelve un objeto
-    con un metodo ``.invoke()`` para correrlo.
-    """
-    grafo = StateGraph(EstadoSaludo)
-    # Los "type: ignore" de abajo tapan una limitacion conocida de los
-    # overloads de langgraph con mypy estricto -- no es un error real
-    # en nuestro codigo.
-    grafo.add_node("preparar", preparar)  # type: ignore[call-overload]
-    grafo.add_node("preguntar_a_claude", preguntar_a_claude)  # type: ignore[call-overload]
-    grafo.set_entry_point("preparar")
-    grafo.add_edge("preparar", "preguntar_a_claude")
-    grafo.add_edge("preguntar_a_claude", END)
+    grafo.add_edge("archivista", END)
+    grafo.add_edge("bibliotecario", END)
+    grafo.add_edge("resumen_parcial", END)
+
     return grafo.compile()

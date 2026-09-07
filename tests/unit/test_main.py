@@ -17,6 +17,7 @@ from app.main import (
     _armar_briefing,
     _disparar_recordatorios_vencidos,
     _enviar_briefing_si_toca,
+    _enviar_digest_si_toca,
     _proxima_ocurrencia,
     _sumar_meses,
     app,
@@ -497,6 +498,45 @@ def test_briefing_se_manda_una_vez_por_dia(
         assert _enviar_briefing_si_toca(en_hora) is False  # ya se mando hoy
 
     assert enviar_mock.call_count == 1
+
+
+def test_digest_se_manda_el_dia_de_la_semana_y_una_vez(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    monkeypatch.setenv("TZ_USUARIO", "UTC")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID_AUTORIZADO", "999")
+    monkeypatch.setattr("app.main.DIA_DIGEST", 0)  # lunes
+    monkeypatch.setattr("app.main.HORA_DIGEST", 9)
+    operaciones.agregar_a_lista("compras", ["pan"])
+
+    domingo = datetime(2026, 9, 6, 10, 0, tzinfo=UTC)  # weekday() == 6
+    lunes = datetime(2026, 9, 7, 9, 30, tzinfo=UTC)  # weekday() == 0
+
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        assert _enviar_digest_si_toca(domingo) is False  # no es el dia
+        assert _enviar_digest_si_toca(lunes) is True  # primera vez de la semana
+        assert _enviar_digest_si_toca(lunes) is False  # ya se mando
+
+    assert enviar_mock.call_count == 1
+
+
+def test_comando_digest_devuelve_el_repaso(
+    cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    operaciones.agregar_a_lista("compras", ["pan", "cafe"])
+
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/digest"),
+            headers=_headers(),
+        )
+
+    _, texto = enviar_mock.call_args[0]
+    assert "Repaso semanal" in texto
+    assert "compras (2)" in texto
 
 
 def test_comando_recordatorios_lista_y_cancela(

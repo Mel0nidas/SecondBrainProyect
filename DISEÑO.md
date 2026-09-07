@@ -125,7 +125,7 @@ flowchart TD
 **6. Nodo de respuesta directa (sin LLM o con Haiku)**
 - Comandos fijos (`/ayuda`, `/estado`, `/costos`) se responden con texto plantillado. Cero tokens de Sonnet.
 
-**Agente diferido a fase 9 (no construir antes): DIGESTOR** — resumen periódico (semanal) de lo capturado, detección de notas huérfanas, sugerencia de links. Se difiere porque no responde a mensajes (corre por cron/EventBridge) y no bloquea nada del flujo principal.
+**DIGESTOR (Fase 14, agente sin nodo)** — no responde a mensajes: lo dispara el loop proactivo una vez por semana (día/hora configurables, default lunes 9). Recorre la bóveda: sintetiza con Sonnet lo capturado en 7 días, lista lo que quedó viejo en `00-inbox/`, y el estado de las listas. Deja el repaso como nota en `90-sistema/` y manda la versión corta por Telegram. `/digest` lo corre a mano. Vive en `src/digestor/`, no en `grafo/nodos/`, porque no es parte del grafo. Se eligió el loop en proceso (no EventBridge) por consistencia con recordatorios y briefing.
 
 ### 2.3 Estado compartido (la "pizarra")
 
@@ -297,6 +297,10 @@ Cierra el hueco de §2.1: lo que Melo edita en Obsidian y las listas de tareas a
 **FASE 13 — Recordatorios recurrentes + briefing matutino (1 sesión)** — *hecha*
 Aprovecha la infra de la Fase 10. El nodo Recordatorio ahora saca también la recurrencia (`diario`/`semanal`/`mensual`); al dispararse, un recurrente se reprograma en vez de marcarse `enviado`. El loop proactivo suma el briefing matutino (§2.2). Sin tocar el Router → sin eval.
 ✅ *"todos los lunes recordame mandar la factura" → llega cada lunes; y cada mañana un resumen de lo que vence hoy + listas abiertas.*
+
+**FASE 14 — Digestor semanal (1 sesión)** — *hecha*
+El agente diferido de §2.2, por fin. `src/digestor/`, disparado por el loop proactivo una vez por semana + comando `/digest`. Sin nodo de grafo (no responde a mensajes). Sin tocar el Router → sin eval. De paso, limpieza del repo: se sacaron de git `chroma_index/` y `grafo_checkpoints.sqlite` (artefactos de runtime), y `src/grafo/boveda_local.py` (herramientas falsas de la Fase 2, muertas desde la Fase 3). README reescrito en inglés.
+✅ *Cada lunes 9am llega un repaso de lo que capturaste la semana + inbox viejo + listas, y queda como nota en `90-sistema/`.*
 
 ---
 

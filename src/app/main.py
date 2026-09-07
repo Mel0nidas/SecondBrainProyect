@@ -29,6 +29,7 @@ from fastapi import FastAPI, Header, Request
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
+from digestor.digestor import generar_digest
 from grafo.estado import Estado, Intencion
 from grafo.grafo import construir_grafo
 from mcp_obsidian import operaciones
@@ -48,6 +49,10 @@ INTERVALO_REINDEX_SEG = int(os.environ.get("INTERVALO_REINDEX_SEG", "300"))
 HORA_BRIEFING = int(os.environ.get("HORA_BRIEFING", "8"))
 # Guarda la fecha del ultimo briefing mandado, para no repetirlo.
 RUTA_ESTADO_BRIEFING = "90-sistema/ultimo_briefing.txt"
+# Dia (0=lunes) y hora local del digest semanal, y su archivo de estado.
+DIA_DIGEST = int(os.environ.get("DIA_DIGEST", "0"))
+HORA_DIGEST = int(os.environ.get("HORA_DIGEST", "9"))
+RUTA_ESTADO_DIGEST = "90-sistema/ultimo_digest.txt"
 
 # Se llama ACA, al importar el modulo -- es decir, apenas arranca
 # uvicorn, antes de que se procese ningun pedido. Si se llamara mas
@@ -164,8 +169,31 @@ def _enviar_briefing_si_toca(ahora_local: datetime | None = None) -> bool:
     return True
 
 
+def _enviar_digest_si_toca(ahora_local: datetime | None = None) -> bool:
+    """Manda el digest semanal una vez por semana, el dia DIA_DIGEST a
+    partir de HORA_DIGEST. Dedup por semana ISO en un archivo de estado."""
+    ahora = ahora_local or datetime.now(_tz_usuario())
+    if ahora.weekday() != DIA_DIGEST or ahora.hour < HORA_DIGEST:
+        return False
+
+    estado = operaciones.ruta_boveda() / RUTA_ESTADO_DIGEST
+    semana = ahora.strftime("%G-W%V")
+    if estado.exists() and estado.read_text(encoding="utf-8").strip() == semana:
+        return False
+
+    estado.parent.mkdir(parents=True, exist_ok=True)
+    estado.write_text(semana, encoding="utf-8")
+
+    texto = generar_digest(ahora)
+    if texto is None:
+        return False
+    enviar_mensaje(int(os.environ["TELEGRAM_CHAT_ID_AUTORIZADO"]), texto)
+    return True
+
+
 async def _loop_proactivo() -> None:
-    """Tarea de fondo: recordatorios vencidos + briefing matutino, cada minuto.
+    """Tarea de fondo: recordatorios vencidos + briefing matutino + digest
+    semanal, cada minuto.
 
     Corre en el mismo proceso que el webhook (no hace falta EventBridge ni
     un cron aparte). Una excepcion nunca corta el loop.
@@ -177,6 +205,8 @@ async def _loop_proactivo() -> None:
                 logger.info("Recordatorios disparados: %d", n)
             if await asyncio.to_thread(_enviar_briefing_si_toca):
                 logger.info("Briefing matutino enviado")
+            if await asyncio.to_thread(_enviar_digest_si_toca):
+                logger.info("Digest semanal enviado")
         except Exception:
             logger.exception("Fallo el loop proactivo; sigo en el proximo tick")
         await asyncio.sleep(INTERVALO_PROACTIVO_SEG)
@@ -443,6 +473,11 @@ def _manejar_lista(texto: str) -> str | None:
         return (
             f"Indice al dia: {r['actualizadas']} nota(s) reindexada(s), "
             f"{r['borradas']} borrada(s)."
+        )
+
+    if limpio == "/digest":
+        return generar_digest(datetime.now(_tz_usuario())) or (
+            "No hay nada para el repaso: ni notas de la semana, ni listas abiertas."
         )
 
     return None

@@ -12,5 +12,15 @@ wheels/
 # Variables de entorno con keys reales (nunca subir esto)
 .env
 
-# Boveda local de prueba (Fase 2) -- contenido personal, no codigo
-boveda_local/
+# Boveda local de prueba -- contenido personal, no codigo
+boveda_local
+
+# Artefactos de runtime: indice de Chroma y checkpointer de LangGraph.
+# Se generan solos al correr; no van al repo.
+chroma_index/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Nota de contexto para retomar el proyecto (no es del repo)
+CONTEXTO.md

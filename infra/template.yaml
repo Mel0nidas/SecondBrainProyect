@@ -262,6 +262,7 @@ Resources:
           echo "RUTA_BOVEDA_OBSIDIAN=/data/boveda" >> /opt/segundo-cerebro/.env
           echo "RUTA_INDICE_CHROMA=/data/chroma" >> /opt/segundo-cerebro/.env
           echo "RUTA_CHECKPOINTS_SQLITE=/data/checkpoints.sqlite" >> /opt/segundo-cerebro/.env
+          echo "TZ_USUARIO=America/Argentina/Buenos_Aires" >> /opt/segundo-cerebro/.env
           chmod 600 /opt/segundo-cerebro/.env
 
           cat > /opt/segundo-cerebro/docker-compose.yml <<EOF

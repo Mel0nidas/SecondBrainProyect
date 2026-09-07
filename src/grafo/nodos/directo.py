@@ -23,12 +23,17 @@ RESPUESTAS_FIJAS = {
         "/estado - en que fase esta el proyecto\n"
         "/costos - resumen de costos (todavia no implementado de verdad)\n"
         "/corregir <intencion> - si clasifique mal el ultimo mensaje, lo\n"
-        "  re-archiva y lo anota para la evaluacion. Ej: /corregir tarea"
+        "  re-archiva y lo anota para la evaluacion. Ej: /corregir tarea\n"
+        "/recordatorios - lista los recordatorios pendientes\n"
+        "/cancelar <id> - cancela un recordatorio\n"
+        "\n"
+        "Para agendar un aviso, escribi normal: "
+        '"recordame llamar al banco el martes 10am".'
     ),
     "/estado": (
-        "Corriendo en produccion (AWS, 24/7). Ultima fase entregada: 7.5. "
-        "Entiende texto, fotos y notas de voz por Telegram; consultas con "
-        "busqueda semantica."
+        "Corriendo en produccion (AWS, 24/7). Entiende texto, fotos y notas "
+        "de voz por Telegram; guarda notas y tareas, responde consultas con "
+        "busqueda semantica, y agenda recordatorios que te avisa a la hora."
     ),
     "/costos": "Todavia no se trackea el costo real -- llega mas adelante en el plan.",
 }

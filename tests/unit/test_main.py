@@ -6,15 +6,17 @@ checkpointer usa un archivo SQLite temporal, no el del proyecto real.
 """
 
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import _disparar_recordatorios_vencidos, app
 from grafo.estado import Intencion, NotaImagenPropuesta, NotaPropuesta, SalidaRouter
 from mcp_obsidian import operaciones
+from recordatorios import almacen
 
 CHAT_ID_AUTORIZADO = 999
 SECRET = "el-secreto-de-prueba"
@@ -385,3 +387,70 @@ def test_corregir_sin_corrida_previa_lo_dice(cliente: TestClient) -> None:
 
     _, texto = enviar_mock.call_args[0]
     assert "nada que corregir" in texto
+
+
+def _ahora() -> datetime:
+    return datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
+
+
+def test_disparar_recordatorios_vencidos_envia_y_marca(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    antes = _ahora() - timedelta(hours=1)
+    almacen.agregar("comprar pan", _ahora() - timedelta(minutes=1), 999, antes)
+    almacen.agregar("mas tarde", _ahora() + timedelta(hours=2), 999, _ahora())
+
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        disparados = _disparar_recordatorios_vencidos(_ahora())
+
+    assert disparados == 1
+    chat_id, texto = enviar_mock.call_args[0]
+    assert chat_id == 999
+    assert "comprar pan" in texto
+    # El vencido salio de pendientes; el futuro sigue.
+    assert [r.texto for r in almacen.pendientes()] == ["mas tarde"]
+
+
+def test_comando_recordatorios_lista_y_cancela(
+    cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    r = almacen.agregar(
+        "pagar el alquiler", _ahora() + timedelta(days=1), CHAT_ID_AUTORIZADO, _ahora()
+    )
+
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/recordatorios"),
+            headers=_headers(),
+        )
+        _, lista = enviar_mock.call_args[0]
+
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, f"/cancelar {r.id}"),
+            headers=_headers(),
+        )
+        _, cancelacion = enviar_mock.call_args[0]
+
+    assert "pagar el alquiler" in lista
+    assert r.id in lista
+    assert "cancelado" in cancelacion.lower()
+    assert almacen.pendientes() == []
+
+
+def test_comando_recordatorios_vacio(
+    cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/recordatorios"),
+            headers=_headers(),
+        )
+
+    _, texto = enviar_mock.call_args[0]
+    assert "No tenes recordatorios" in texto

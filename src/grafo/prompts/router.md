@@ -9,7 +9,12 @@ clases:
   más adelante.
 - consultar: el usuario está preguntando algo sobre lo que ya guardó
   antes.
-- tarea: el usuario quiere crear o marcar como completado un pendiente.
+- tarea: el usuario quiere crear o marcar como completado un pendiente,
+  sin pedir un aviso en un momento puntual.
+- recordatorio: el usuario quiere que el asistente le avise algo en un
+  momento futuro concreto. Suele traer un "cuándo": "el martes",
+  "mañana a las 9", "en 2 horas", una fecha. Ej: "recordame llamar al
+  banco el martes".
 - imagen: el mensaje hace referencia a una imagen o foto.
 - comando: el mensaje es un comando explícito que empieza con "/" (por
   ejemplo /ayuda, /estado).

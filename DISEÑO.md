@@ -72,7 +72,7 @@ indexa lo que crea él, en el nodo Archivista). El Bibliotecario no la
 encontraría por búsqueda semántica hasta que se agregue un re-indexado
 (watcher en el server o reindex periódico) — queda para Fase 9.
 
-### 2.2 Los agentes (diseño cerrado: 4 nodos, 3 son "agentes")
+### 2.2 Los agentes (5 nodos de decisión: Router + Archivista + Bibliotecario + Recordatorio + directo)
 
 Principio de diseño: **la menor cantidad de agentes que cubra los casos de uso**. Cada agente extra es más tokens, más latencia y más superficie de error. Se arranca con estos y no se agregan más hasta que la evaluación (§6) demuestre que hace falta.
 
@@ -91,7 +91,7 @@ flowchart TD
 ```
 
 **1. ROUTER (nodo con Haiku)**
-- Único trabajo: clasificar la intención del mensaje en una de estas clases: `capturar` (guardar algo), `consultar` (preguntar algo a la bóveda), `tarea` (crear/completar un pendiente), `imagen` (llegó foto), `comando` (ayuda, estado, config), `ambiguo`.
+- Único trabajo: clasificar la intención del mensaje en una de estas clases: `capturar` (guardar algo), `consultar` (preguntar algo a la bóveda), `tarea` (crear/completar un pendiente), `recordatorio` (pedir un aviso en un momento futuro), `imagen` (llegó foto), `comando` (ayuda, estado, config), `ambiguo`.
 - Sin herramientas. Devuelve JSON estructurado (clase + confianza). Si `ambiguo`, repregunta al usuario en vez de adivinar.
 - Es el nodo que corre en el 100% de los mensajes → por eso Haiku.
 
@@ -106,7 +106,14 @@ flowchart TD
 - Herramientas: `buscar_semantico` (Chroma), `leer_nota`, `buscar_por_titulo` (MCP).
 - Es de solo lectura por diseño: no tiene ninguna herramienta de escritura.
 
-**4. Nodo de respuesta directa (sin LLM o con Haiku)**
+**4. RECORDATORIO (agente con Sonnet) — Fase 10**
+- Interpreta *"recordame X el martes 10am"*: saca el texto y resuelve el "cuándo" a una fecha/hora concreta (relativa a la hora actual del usuario, `TZ_USUARIO`).
+- Da de alta el recordatorio en `90-sistema/recordatorios.jsonl` (mismo criterio que `correcciones.jsonl`: en la bóveda, sin base de datos aparte, visible desde Obsidian).
+- Si el mensaje no trae un cuándo, repregunta. Si la hora ya pasó, la rechaza.
+- **El disparo NO lo hace este nodo**: un loop en `app/main.py` revisa vencimientos cada minuto y manda el aviso por Telegram. Es el primer comportamiento *proactivo* del bot (antes solo respondía). Se eligió un loop en el mismo proceso en vez de EventBridge/Lambda: todo vive en un contenedor y no hace falta más.
+- Comandos operativos asociados (en el webhook, no en el grafo): `/recordatorios` lista los pendientes, `/cancelar <id>` cancela uno.
+
+**5. Nodo de respuesta directa (sin LLM o con Haiku)**
 - Comandos fijos (`/ayuda`, `/estado`, `/costos`) se responden con texto plantillado. Cero tokens de Sonnet.
 
 **Agente diferido a fase 9 (no construir antes): DIGESTOR** — resumen periódico (semanal) de lo capturado, detección de notas huérfanas, sugerencia de links. Se difiere porque no responde a mensajes (corre por cron/EventBridge) y no bloquea nada del flujo principal.
@@ -262,8 +269,12 @@ Contenedor `syncthing` en el `docker-compose` de la instancia, montando `./data/
 Idea a definir cuando se llegue ahí -- por ejemplo, un dominio propio en vez de depender de sslip.io, o migrar a Fargate/ECS mas adelante si el proyecto crece a necesitar mas de una instancia.
 
 **FASE 9 — Evaluación + Digestor (2-3 sesiones)** — *harness del Router y `/corregir` hechos; falta el set real y el Digestor*
-Set en `tests/eval/mensajes.jsonl`, runner `tests/eval/evaluar.py`, baseline en `tests/eval/baseline.json`, workflow `eval.yml`, comando `/corregir` + `tests/eval/incorporar.py` para alimentar el set (§6). Primera medición: 24/24 con un set casi todo sintético — el número recién dice algo cuando el set se llena de mensajes reales ambiguos vía `/corregir`. Falta: la métrica del Bibliotecario (top-3) y el agente Digestor semanal vía EventBridge.
+Set en `tests/eval/mensajes.jsonl`, runner `tests/eval/evaluar.py`, baseline en `tests/eval/baseline.json`, workflow `eval.yml`, comando `/corregir` + `tests/eval/incorporar.py` para alimentar el set (§6). El set y el baseline se movieron al agregar `recordatorio` (§Fase 10): 28 casos, baseline ~93% (una corrida dio 100% y otra 93% por un caso genuinamente ambiguo — *"recordame comprar el regalo para el cumple de mamá"*, sin hora). Falta: la métrica del Bibliotecario (top-3) y el agente Digestor semanal vía EventBridge.
 ✅ *Cambiar un prompt y saber en un comando si mejoró o empeoró.*
+
+**FASE 10 — Recordatorios / proactividad (1 sesión)** — *hecha*
+Primer paso fuera del patrón puramente reactivo. Intención `recordatorio` en el Router → nodo que resuelve el "cuándo" (relativo a `TZ_USUARIO`) y da de alta el registro en `90-sistema/recordatorios.jsonl`. Un loop en `app/main.py` (cada 60s, mismo proceso, sin EventBridge) revisa vencimientos y manda el aviso por Telegram. `/recordatorios` y `/cancelar <id>` para administrarlos. El eval confirmó que las otras 6 intenciones no se rompieron. Detalle en §2.2.
+✅ *"recordame llamar al banco el martes 10am" → el martes a las 10 llega un mensaje del bot.*
 
 ---
 

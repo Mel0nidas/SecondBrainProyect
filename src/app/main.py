@@ -13,11 +13,15 @@ avisale a esta URL" -- y Telegram nos hace un POST solo cuando hay algo
 nuevo.
 """
 
+import asyncio
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, Request
@@ -27,8 +31,14 @@ from langgraph.types import Command
 from grafo.estado import Estado, Intencion
 from grafo.grafo import construir_grafo
 from mcp_obsidian import operaciones
+from recordatorios import almacen
 from telegram.cliente import descargar_archivo, enviar_mensaje
 from transcripcion.groq import transcribir
+
+logger = logging.getLogger(__name__)
+
+# Cada cuanto el loop revisa si hay recordatorios vencidos.
+INTERVALO_RECORDATORIOS_SEG = 60
 
 # Se llama ACA, al importar el modulo -- es decir, apenas arranca
 # uvicorn, antes de que se procese ningun pedido. Si se llamara mas
@@ -42,9 +52,42 @@ def _ruta_checkpoints() -> str:
     return os.environ.get("RUTA_CHECKPOINTS_SQLITE", "grafo_checkpoints.sqlite")
 
 
+def _disparar_recordatorios_vencidos(ahora_utc: datetime | None = None) -> int:
+    """Manda por Telegram los recordatorios cuya hora ya llego.
+
+    Devuelve cuantos disparo. Marca cada uno como ``enviado`` DESPUES de
+    mandarlo: si el envio falla (ej. Telegram caido), queda pendiente y
+    se reintenta en el proximo tick.
+    """
+    ahora = ahora_utc or datetime.now(UTC)
+    disparados = 0
+    for r in almacen.vencidos(ahora):
+        enviar_mensaje(r.chat_id, f"⏰ Recordatorio: {r.texto}")
+        almacen.marcar_enviado(r.id)
+        disparados += 1
+    return disparados
+
+
+async def _loop_recordatorios() -> None:
+    """Tarea de fondo: revisa vencimientos cada minuto, para siempre.
+
+    Corre en el mismo proceso que el webhook (no hace falta EventBridge ni
+    un cron aparte para esto). Una excepcion nunca corta el loop.
+    """
+    while True:
+        try:
+            n = await asyncio.to_thread(_disparar_recordatorios_vencidos)
+            if n:
+                logger.info("Recordatorios disparados: %d", n)
+        except Exception:
+            logger.exception("Fallo el chequeo de recordatorios; sigo en el proximo tick")
+        await asyncio.sleep(INTERVALO_RECORDATORIOS_SEG)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Arma el grafo UNA sola vez, cuando arranca el servidor.
+    """Arma el grafo UNA sola vez, cuando arranca el servidor, y lanza el
+    loop de recordatorios.
 
     El checkpointer de SQLite es lo que permite que ``interrupt()``
     pause una ejecucion y la retome en un pedido HTTP completamente
@@ -54,7 +97,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     with SqliteSaver.from_conn_string(_ruta_checkpoints()) as checkpointer:
         app.state.grafo = construir_grafo(checkpointer=checkpointer)
-        yield
+        tarea = asyncio.create_task(_loop_recordatorios())
+        try:
+            yield
+        finally:
+            tarea.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -223,6 +270,39 @@ def _manejar_corregir(texto: str, grafo: Any, config: dict[str, Any]) -> str | N
     return f'Corregido a "{nueva.value}"{antes} y anotado para la evaluacion.{movida}'
 
 
+def _tz_usuario() -> ZoneInfo:
+    return ZoneInfo(os.environ.get("TZ_USUARIO", "America/Argentina/Buenos_Aires"))
+
+
+def _manejar_recordatorios(texto: str) -> str | None:
+    """Procesa ``/recordatorios`` (lista los pendientes) y ``/cancelar <id>``.
+
+    Devuelve el texto de respuesta, o ``None`` si el mensaje no era uno de
+    esos comandos.
+    """
+    limpio = texto.strip()
+
+    if limpio == "/recordatorios":
+        pend = sorted(almacen.pendientes(), key=lambda r: r.cuando)
+        if not pend:
+            return "No tenes recordatorios pendientes."
+        tz = _tz_usuario()
+        lineas = [
+            f"- {r.cuando_dt().astimezone(tz).strftime('%d/%m %H:%M')}  {r.texto}"
+            f"   /cancelar {r.id}"
+            for r in pend
+        ]
+        return "Recordatorios pendientes:\n" + "\n".join(lineas)
+
+    if limpio.startswith("/cancelar "):
+        id_ = limpio.split(maxsplit=1)[1].strip()
+        if almacen.marcar_cancelado(id_):
+            return "Recordatorio cancelado."
+        return f"No encontre un recordatorio pendiente con id {id_}."
+
+    return None
+
+
 @app.get("/salud")
 def salud() -> dict[str, str]:
     """Healthcheck simple: confirma que el servidor esta arriba."""
@@ -267,12 +347,14 @@ def webhook_telegram(
     pausado = bool(grafo.get_state(config).next)
 
     if not pausado:
-        # "/corregir" actua sobre la corrida anterior (mueve la nota mal
-        # archivada y anota el caso para la evaluacion). No pasa por el
-        # grafo -- ver DISEÑO.md §6.
-        respuesta_corregir = _manejar_corregir(texto, grafo, config)
-        if respuesta_corregir is not None:
-            enviar_mensaje(chat_id, respuesta_corregir)
+        # Comandos operativos que no pasan por el grafo: "/corregir" actua
+        # sobre la corrida anterior (DISEÑO.md §6), "/recordatorios" y
+        # "/cancelar" leen/escriben el almacen de recordatorios.
+        respuesta_op = _manejar_corregir(texto, grafo, config)
+        if respuesta_op is None:
+            respuesta_op = _manejar_recordatorios(texto)
+        if respuesta_op is not None:
+            enviar_mensaje(chat_id, respuesta_op)
             return {"ok": True}
 
     if pausado:

@@ -1,5 +1,5 @@
 // Set de evaluacion del Router (DISEÑO.md §6). Una linea = un caso.
-// Campos: mensaje, intencion (capturar|consultar|tarea|imagen|comando|ambiguo),
+// Campos: mensaje, intencion (capturar|consultar|tarea|recordatorio|imagen|comando|ambiguo),
 //         fuente ("real" = mensaje que Melo mando de verdad, "sintetico" = inventado).
 // Opcionales para capturas: carpeta, tags (todavia no se evaluan, se guardan para mas adelante).
 // Se crece con uso real: el comando /corregir agrega el caso corregido aca.
@@ -16,9 +16,13 @@
 {"mensaje": "que dije sobre el presupuesto el mes pasado", "intencion": "consultar", "fuente": "sintetico"}
 {"mensaje": "buscame las notas que tengan que ver con arquitectura de software", "intencion": "consultar", "fuente": "sintetico"}
 {"mensaje": "tengo que llamar al contador antes del viernes", "intencion": "tarea", "fuente": "sintetico"}
-{"mensaje": "recordame comprar el regalo para el cumple de mama", "intencion": "tarea", "fuente": "sintetico"}
 {"mensaje": "marca como hecha la tarea de renovar el seguro del auto", "intencion": "tarea", "fuente": "sintetico"}
 {"mensaje": "agregar a pendientes: mandar la factura del mes a administracion", "intencion": "tarea", "fuente": "sintetico"}
+{"mensaje": "recordame llamar al banco el martes a las 10", "intencion": "recordatorio", "fuente": "sintetico"}
+{"mensaje": "avisame manana a la manana que tengo que mandar la factura", "intencion": "recordatorio", "fuente": "sintetico"}
+{"mensaje": "en 2 horas recordame sacar la ropa del lavarropas", "intencion": "recordatorio", "fuente": "sintetico"}
+{"mensaje": "el 15 recordame pagar el alquiler", "intencion": "recordatorio", "fuente": "sintetico"}
+{"mensaje": "recordame comprar el regalo para el cumple de mama", "intencion": "recordatorio", "fuente": "sintetico"}
 {"mensaje": "guarda la foto que te mande recien", "intencion": "imagen", "fuente": "sintetico"}
 {"mensaje": "acordate de la imagen de la pizarra que te pase", "intencion": "imagen", "fuente": "sintetico"}
 {"mensaje": "/estado", "intencion": "comando", "fuente": "real"}

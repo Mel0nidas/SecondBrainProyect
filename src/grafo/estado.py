@@ -17,13 +17,14 @@ class Intencion(StrEnum):
 
     ``StrEnum`` (agregado en Python 3.11) se comporta como texto plano
     ademas de como enum: se puede comparar y guardar como si fuera un
-    string, pero solo se puede crear con uno de estos seis valores.
+    string, pero solo se puede crear con uno de estos valores.
     """
 
     CAPTURAR = "capturar"
     CONSULTAR = "consultar"
     TAREA = "tarea"
     IMAGEN = "imagen"
+    RECORDATORIO = "recordatorio"
     COMANDO = "comando"
     AMBIGUO = "ambiguo"
 
@@ -46,6 +47,19 @@ class NotaPropuesta(BaseModel):
 
     titulo: str
     tags: list[str]
+
+
+class RecordatorioPropuesta(BaseModel):
+    """Lo que le pedimos a Claude al interpretar "recordame X el martes".
+
+    ``entendido`` es False si del mensaje no sale un momento concreto
+    (ej. "recordame algo" sin cuando). ``cuando`` es la fecha/hora en la
+    zona horaria del usuario, formato ISO sin offset ("2026-09-09T10:00:00").
+    """
+
+    entendido: bool
+    texto: str
+    cuando: str
 
 
 class NotaImagenPropuesta(BaseModel):

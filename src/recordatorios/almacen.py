@@ -30,6 +30,9 @@ ESTADO_ENVIADO = "enviado"
 ESTADO_CANCELADO = "cancelado"
 
 
+REPETIR_VALIDOS = ("no", "diario", "semanal", "mensual")
+
+
 @dataclass
 class Recordatorio:
     id: str
@@ -38,6 +41,7 @@ class Recordatorio:
     chat_id: int
     creado: str  # ISO UTC
     estado: str
+    repetir: str = "no"  # "no" | "diario" | "semanal" | "mensual"
 
     def cuando_dt(self) -> datetime:
         return datetime.fromisoformat(self.cuando)
@@ -71,7 +75,13 @@ def _reescribir(recordatorios: list[Recordatorio]) -> None:
     os.replace(tmp, ruta)
 
 
-def agregar(texto: str, cuando_utc: datetime, chat_id: int, ahora_utc: datetime) -> Recordatorio:
+def agregar(
+    texto: str,
+    cuando_utc: datetime,
+    chat_id: int,
+    ahora_utc: datetime,
+    repetir: str = "no",
+) -> Recordatorio:
     """Da de alta un recordatorio pendiente y devuelve el registro creado."""
     recordatorio = Recordatorio(
         id=secrets.token_hex(3),
@@ -80,6 +90,7 @@ def agregar(texto: str, cuando_utc: datetime, chat_id: int, ahora_utc: datetime)
         chat_id=chat_id,
         creado=ahora_utc.isoformat(),
         estado=ESTADO_PENDIENTE,
+        repetir=repetir if repetir in REPETIR_VALIDOS else "no",
     )
     ruta = _ruta()
     ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -115,3 +126,18 @@ def marcar_enviado(id_: str) -> bool:
 
 def marcar_cancelado(id_: str) -> bool:
     return _cambiar_estado(id_, ESTADO_CANCELADO)
+
+
+def reprogramar(id_: str, nuevo_cuando_utc: datetime) -> bool:
+    """Mueve un recordatorio pendiente a una hora futura, sin cambiar su
+    estado. Se usa para los recurrentes: cuando uno se dispara, en vez de
+    marcarlo ``enviado`` se lo reprograma a la proxima ocurrencia."""
+    todos = _leer_todos()
+    encontrado = False
+    for r in todos:
+        if r.id == id_ and r.estado == ESTADO_PENDIENTE:
+            r.cuando = nuevo_cuando_utc.isoformat()
+            encontrado = True
+    if encontrado:
+        _reescribir(todos)
+    return encontrado

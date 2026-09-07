@@ -71,11 +71,15 @@ class RecordatorioPropuesta(BaseModel):
     ``entendido`` es False si del mensaje no sale un momento concreto
     (ej. "recordame algo" sin cuando). ``cuando`` es la fecha/hora en la
     zona horaria del usuario, formato ISO sin offset ("2026-09-09T10:00:00").
+    ``repetir`` es "no" salvo que el usuario pida algo recurrente
+    ("todos los lunes" -> "semanal", "todos los dias" -> "diario",
+    "el 1 de cada mes" -> "mensual").
     """
 
     entendido: bool
     texto: str
     cuando: str
+    repetir: str = "no"
 
 
 class NotaImagenPropuesta(BaseModel):

@@ -58,3 +58,40 @@ def test_cancelar_uno_ya_enviado_no_hace_nada() -> None:
     almacen.marcar_enviado(a.id)
 
     assert almacen.marcar_cancelado(a.id) is False
+
+
+def test_agregar_guarda_el_repetir() -> None:
+    a = almacen.agregar("factura", _dt(days=1), 1, _dt(), repetir="semanal")
+    assert a.repetir == "semanal"
+    assert almacen.pendientes()[0].repetir == "semanal"
+
+
+def test_agregar_repetir_invalido_cae_en_no() -> None:
+    a = almacen.agregar("x", _dt(days=1), 1, _dt(), repetir="cada-tanto")
+    assert a.repetir == "no"
+
+
+def test_reprogramar_mueve_la_hora_y_deja_pendiente() -> None:
+    a = almacen.agregar("regar", _dt(hours=1), 1, _dt(), repetir="diario")
+
+    assert almacen.reprogramar(a.id, _dt(days=1, hours=1)) is True
+
+    p = almacen.pendientes()
+    assert len(p) == 1
+    assert p[0].cuando_dt() == _dt(days=1, hours=1)
+    assert p[0].estado == "pendiente"
+
+
+def test_leer_un_recordatorio_viejo_sin_campo_repetir() -> None:
+    # Simula una linea escrita antes de que existiera "repetir".
+    ruta = almacen._ruta()
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    ruta.write_text(
+        '{"id": "abc", "texto": "viejo", "cuando": "2026-09-09T12:00:00+00:00",'
+        ' "chat_id": 1, "creado": "2026-09-07T12:00:00+00:00", "estado": "pendiente"}\n',
+        encoding="utf-8",
+    )
+
+    p = almacen.pendientes()
+    assert len(p) == 1
+    assert p[0].repetir == "no"

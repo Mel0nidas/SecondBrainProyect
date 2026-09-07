@@ -108,12 +108,13 @@ flowchart TD
 - Herramientas: `buscar_semantico` (Chroma), `leer_nota`, `buscar_por_titulo` (MCP).
 - Es de solo lectura por diseño: no tiene ninguna herramienta de escritura.
 
-**4. RECORDATORIO (agente con Sonnet) — Fase 10**
-- Interpreta *"recordame X el martes 10am"*: saca el texto y resuelve el "cuándo" a una fecha/hora concreta (relativa a la hora actual del usuario, `TZ_USUARIO`).
+**4. RECORDATORIO (agente con Sonnet) — Fase 10, recurrentes en Fase 13**
+- Interpreta *"recordame X el martes 10am"*: saca el texto y resuelve el "cuándo" a una fecha/hora concreta (relativa a la hora actual del usuario, `TZ_USUARIO`). Detecta si es **recurrente** (*"todos los lunes"* → `semanal`, *"todos los días"* → `diario`, *"el 1 de cada mes"* → `mensual`).
 - Da de alta el recordatorio en `90-sistema/recordatorios.jsonl` (mismo criterio que `correcciones.jsonl`: en la bóveda, sin base de datos aparte, visible desde Obsidian).
 - Si el mensaje no trae un cuándo, repregunta. Si la hora ya pasó, la rechaza.
-- **El disparo NO lo hace este nodo**: un loop en `app/main.py` revisa vencimientos cada minuto y manda el aviso por Telegram. Es el primer comportamiento *proactivo* del bot (antes solo respondía). Se eligió un loop en el mismo proceso en vez de EventBridge/Lambda: todo vive en un contenedor y no hace falta más.
-- Comandos operativos asociados (en el webhook, no en el grafo): `/recordatorios` lista los pendientes, `/cancelar <id>` cancela uno.
+- **El disparo NO lo hace este nodo**: el loop proactivo de `app/main.py` (cada minuto) manda el aviso por Telegram. Los de una vez se marcan `enviado`; los recurrentes se **reprograman** a la próxima ocurrencia. Es el primer comportamiento *proactivo* del bot (antes solo respondía). Se eligió un loop en el mismo proceso en vez de EventBridge/Lambda: todo vive en un contenedor y no hace falta más.
+- El mismo loop manda el **briefing matutino** (Fase 13): una vez por día a partir de `HORA_BRIEFING` (local, default 8), con los recordatorios que vencen hoy + las listas de tareas abiertas. Si no hay nada, no manda. Un archivo `90-sistema/ultimo_briefing.txt` evita repetirlo.
+- Comandos operativos asociados (en el webhook, no en el grafo): `/recordatorios` lista los pendientes (con su recurrencia), `/cancelar <id>` cancela uno.
 
 **5. TAREAS (agente con Sonnet) — Fase 11**
 - Maneja la intención `tarea` como **listas con checkboxes**, no una nota por tarea. *"comprá pan la próxima vez que vayas al súper"* → `- [ ] pan` en `20-tareas/compras.md`.
@@ -290,8 +291,12 @@ La intención `tarea` deja el modelo "una nota por tarea" y pasa a **listas con 
 ✅ *"compra pan y leche la próxima vez que vayas al súper" → aparecen en `20-tareas/compras.md`; "ya compré el pan" lo tacha.*
 
 **FASE 12 — Índice al día con la bóveda (1 sesión)** — *hecha*
-Cierra el hueco de §2.1: lo que Melo edita en Obsidian y las listas de tareas ahora sí son buscables. Loop en `app/main.py` que corre `rag.indexar.sincronizar_indice()` cada ~5 min (compara mtime contra un manifiesto, reindexa lo cambiado, borra lo que ya no existe). Comando `/reindexar` para forzarlo. Sin tocar el Router → sin eval. Ver §4.3.
+Cierra el hueco de §2.1: lo que Melo edita en Obsidian y las listas de tareas ahora sí son buscables. Loop en `app/main.py` que corre `rag.indexar.sincronizar_indice()` cada ~5 min (compara mtime contra un manifiesto, reindexa lo cambiado, borra lo que ya no existe, de a 3 notas por vuelta por el rate limit de Voyage). Comando `/reindexar` para forzarlo. Sin tocar el Router → sin eval. Ver §4.3.
 ✅ *Escribo una nota en Obsidian → a los pocos minutos el Bibliotecario la encuentra por búsqueda semántica.*
+
+**FASE 13 — Recordatorios recurrentes + briefing matutino (1 sesión)** — *hecha*
+Aprovecha la infra de la Fase 10. El nodo Recordatorio ahora saca también la recurrencia (`diario`/`semanal`/`mensual`); al dispararse, un recurrente se reprograma en vez de marcarse `enviado`. El loop proactivo suma el briefing matutino (§2.2). Sin tocar el Router → sin eval.
+✅ *"todos los lunes recordame mandar la factura" → llega cada lunes; y cada mañana un resumen de lo que vence hoy + listas abiertas.*
 
 ---
 

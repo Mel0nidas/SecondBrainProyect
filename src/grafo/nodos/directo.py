@@ -29,14 +29,16 @@ RESPUESTAS_FIJAS = {
         "/lista - nombra tus listas; /lista <nombre> - la muestra\n"
         "/reindexar - fuerza la indexacion de lo que editaste en Obsidian\n"
         "\n"
-        'Escribi normal para: agendar un aviso ("recordame X el martes"),\n'
-        'o sumar a una lista ("compra pan la proxima vez que vayas al super").'
+        "Escribi normal para: agendar un aviso, tambien recurrente\n"
+        '  ("recordame X el martes", "todos los lunes recordame Y");\n'
+        'sumar a una lista ("compra pan la proxima vez que vayas al super").\n'
+        "Todas las mananas te mando lo que vence hoy + tus listas abiertas."
     ),
     "/estado": (
         "Corriendo en produccion (AWS, 24/7). Entiende texto, fotos y notas "
         "de voz por Telegram; guarda notas, maneja listas de tareas, responde "
-        "consultas con busqueda semantica, y agenda recordatorios que te avisa "
-        "a la hora."
+        "consultas con busqueda semantica, agenda recordatorios (incluso "
+        "recurrentes) y manda un briefing cada manana."
     ),
     "/costos": "Todavia no se trackea el costo real -- llega mas adelante en el plan.",
 }

@@ -11,7 +11,11 @@ Con el mensaje del usuario y la fecha/hora actual que te paso, devolvé:
   banco".
 - **cuando**: la fecha y hora resueltas, en formato ISO **sin** zona
   horaria (ej: `2026-09-09T10:00:00`). Si `entendido` es `false`, dejá
-  `cuando` en `""`.
+  `cuando` en `""`. Para un recurrente, poné la **primera** ocurrencia.
+- **repetir**: `no` salvo que el usuario pida algo que se repite:
+  - `diario`: "todos los días", "cada mañana", "cada noche".
+  - `semanal`: "todos los lunes", "cada semana", "los viernes".
+  - `mensual`: "el 1 de cada mes", "todos los meses".
 
 Reglas:
 

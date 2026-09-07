@@ -70,6 +70,13 @@ def recordatorio(estado: Estado) -> dict[str, object]:
     if cuando_utc <= ahora_utc:
         return {"respuesta_final": "Esa hora ya paso. Decime un momento futuro."}
 
-    almacen.agregar(propuesta.texto, cuando_utc, _chat_id(), ahora_utc)
+    repetir = propuesta.repetir if propuesta.repetir in almacen.REPETIR_VALIDOS else "no"
+    almacen.agregar(propuesta.texto, cuando_utc, _chat_id(), ahora_utc, repetir=repetir)
+
     cuando_txt = _formato_local(cuando_local)
-    return {"respuesta_final": f'Listo. Te recuerdo "{propuesta.texto}" el {cuando_txt}.'}
+    cada = {"diario": " y cada día", "semanal": " y cada semana", "mensual": " y cada mes"}
+    return {
+        "respuesta_final": (
+            f'Listo. Te recuerdo "{propuesta.texto}" el {cuando_txt}{cada.get(repetir, "")}.'
+        )
+    }

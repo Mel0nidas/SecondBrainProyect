@@ -13,7 +13,14 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import _disparar_recordatorios_vencidos, app
+from app.main import (
+    _armar_briefing,
+    _disparar_recordatorios_vencidos,
+    _enviar_briefing_si_toca,
+    _proxima_ocurrencia,
+    _sumar_meses,
+    app,
+)
 from grafo.estado import Intencion, NotaImagenPropuesta, NotaPropuesta, SalidaRouter
 from mcp_obsidian import operaciones
 from recordatorios import almacen
@@ -410,6 +417,86 @@ def test_disparar_recordatorios_vencidos_envia_y_marca(
     assert "comprar pan" in texto
     # El vencido salio de pendientes; el futuro sigue.
     assert [r.texto for r in almacen.pendientes()] == ["mas tarde"]
+
+
+def test_proxima_ocurrencia_avanza_hasta_el_futuro() -> None:
+    base = datetime(2026, 9, 7, 9, 0, tzinfo=UTC)  # lunes
+    ahora = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)  # ~2 semanas despues
+
+    diaria = _proxima_ocurrencia(base, "diario", ahora)
+    semanal = _proxima_ocurrencia(base, "semanal", ahora)
+
+    assert diaria > ahora and diaria.hour == 9
+    assert semanal > ahora and semanal.weekday() == 0  # sigue siendo lunes
+
+
+def test_sumar_meses_recorta_el_dia() -> None:
+    # 31 de enero + 1 mes -> 28 de febrero (2026 no es bisiesto).
+    assert _sumar_meses(datetime(2026, 1, 31, tzinfo=UTC), 1) == datetime(2026, 2, 28, tzinfo=UTC)
+    # cruce de anio
+    assert _sumar_meses(datetime(2026, 12, 15, tzinfo=UTC), 1) == datetime(2027, 1, 15, tzinfo=UTC)
+
+
+def test_disparar_recurrente_reprograma_en_vez_de_marcar_enviado(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    almacen.agregar(
+        "regar las plantas", _ahora() - timedelta(minutes=1), 999,
+        _ahora() - timedelta(days=1), repetir="diario",
+    )
+
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        _disparar_recordatorios_vencidos(_ahora())
+
+    enviar_mock.assert_called_once()
+    pend = almacen.pendientes()
+    assert len(pend) == 1  # sigue pendiente, reprogramado
+    assert pend[0].cuando_dt() > _ahora()
+
+
+def test_armar_briefing_junta_recordatorios_de_hoy_y_listas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    monkeypatch.setenv("TZ_USUARIO", "UTC")
+    hoy_local = datetime(2026, 9, 8, 8, 0, tzinfo=UTC)
+    almacen.agregar("dentista", datetime(2026, 9, 8, 15, 0, tzinfo=UTC), 999, _ahora())
+    almacen.agregar("otro mes", datetime(2026, 10, 1, 9, 0, tzinfo=UTC), 999, _ahora())
+    operaciones.agregar_a_lista("compras", ["pan", "cafe"])
+
+    texto = _armar_briefing(hoy_local)
+
+    assert texto is not None
+    assert "dentista" in texto and "15:00" in texto
+    assert "otro mes" not in texto
+    assert "compras (2)" in texto
+
+
+def test_armar_briefing_vacio_devuelve_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    assert _armar_briefing(datetime(2026, 9, 8, 8, 0, tzinfo=UTC)) is None
+
+
+def test_briefing_se_manda_una_vez_por_dia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    monkeypatch.setenv("TZ_USUARIO", "UTC")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID_AUTORIZADO", "999")
+    operaciones.agregar_a_lista("compras", ["pan"])
+
+    antes_de_hora = datetime(2026, 9, 8, 6, 0, tzinfo=UTC)
+    en_hora = datetime(2026, 9, 8, 8, 30, tzinfo=UTC)
+
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        assert _enviar_briefing_si_toca(antes_de_hora) is False  # todavia no son las 8
+        assert _enviar_briefing_si_toca(en_hora) is True  # primera vez del dia
+        assert _enviar_briefing_si_toca(en_hora) is False  # ya se mando hoy
+
+    assert enviar_mock.call_count == 1
 
 
 def test_comando_recordatorios_lista_y_cancela(

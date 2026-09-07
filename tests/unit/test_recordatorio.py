@@ -55,3 +55,16 @@ def test_recordatorio_en_el_pasado_se_rechaza() -> None:
 
     assert almacen.pendientes() == []
     assert "paso" in str(resultado["respuesta_final"]).lower()
+
+
+def test_recordatorio_recurrente_guarda_repetir_y_lo_dice() -> None:
+    resultado = _correr(
+        RecordatorioPropuesta(
+            entendido=True, texto="mandar la factura", cuando="2030-01-07T09:00:00",
+            repetir="semanal",
+        ),
+        "todos los lunes recordame mandar la factura",
+    )
+
+    assert almacen.pendientes()[0].repetir == "semanal"
+    assert "cada semana" in str(resultado["respuesta_final"])

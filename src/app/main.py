@@ -14,12 +14,13 @@ nuevo.
 """
 
 import asyncio
+import calendar
 import json
 import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -38,11 +39,15 @@ from transcripcion.groq import transcribir
 
 logger = logging.getLogger(__name__)
 
-# Cada cuanto el loop revisa si hay recordatorios vencidos.
-INTERVALO_RECORDATORIOS_SEG = 60
+# Cada cuanto el loop proactivo revisa recordatorios y el briefing.
+INTERVALO_PROACTIVO_SEG = 60
 # Cada cuanto se empareja el indice de busqueda con la boveda (notas que
 # Melo edita en Obsidian, listas de tareas). Mas espaciado: es mas pesado.
 INTERVALO_REINDEX_SEG = int(os.environ.get("INTERVALO_REINDEX_SEG", "300"))
+# Hora local (0-23) a la que se manda el briefing matutino.
+HORA_BRIEFING = int(os.environ.get("HORA_BRIEFING", "8"))
+# Guarda la fecha del ultimo briefing mandado, para no repetirlo.
+RUTA_ESTADO_BRIEFING = "90-sistema/ultimo_briefing.txt"
 
 # Se llama ACA, al importar el modulo -- es decir, apenas arranca
 # uvicorn, antes de que se procese ningun pedido. Si se llamara mas
@@ -56,36 +61,125 @@ def _ruta_checkpoints() -> str:
     return os.environ.get("RUTA_CHECKPOINTS_SQLITE", "grafo_checkpoints.sqlite")
 
 
+def _tz_usuario() -> ZoneInfo:
+    return ZoneInfo(os.environ.get("TZ_USUARIO", "America/Argentina/Buenos_Aires"))
+
+
+def _sumar_meses(dt: datetime, meses: int) -> datetime:
+    """dt + N meses, recortando el dia si el mes destino es mas corto."""
+    indice = dt.month - 1 + meses
+    anio = dt.year + indice // 12
+    mes = indice % 12 + 1
+    dia = min(dt.day, calendar.monthrange(anio, mes)[1])
+    return dt.replace(year=anio, month=mes, day=dia)
+
+
+def _proxima_ocurrencia(cuando: datetime, repetir: str, ahora: datetime) -> datetime:
+    """La siguiente vez que toca un recordatorio recurrente, ya en el futuro.
+
+    Si el loop estuvo caido varios dias, avanza tantas veces como haga falta.
+    """
+    siguiente = cuando
+    while siguiente <= ahora:
+        if repetir == "diario":
+            siguiente += timedelta(days=1)
+        elif repetir == "semanal":
+            siguiente += timedelta(weeks=1)
+        elif repetir == "mensual":
+            siguiente = _sumar_meses(siguiente, 1)
+        else:
+            return siguiente
+    return siguiente
+
+
 def _disparar_recordatorios_vencidos(ahora_utc: datetime | None = None) -> int:
     """Manda por Telegram los recordatorios cuya hora ya llego.
 
-    Devuelve cuantos disparo. Marca cada uno como ``enviado`` DESPUES de
-    mandarlo: si el envio falla (ej. Telegram caido), queda pendiente y
-    se reintenta en el proximo tick.
+    Devuelve cuantos disparo. Los de una sola vez se marcan ``enviado``;
+    los recurrentes se reprograman a la proxima ocurrencia. El cambio se
+    hace DESPUES de mandar: si el envio falla, queda pendiente y se
+    reintenta en el proximo tick.
     """
     ahora = ahora_utc or datetime.now(UTC)
     disparados = 0
     for r in almacen.vencidos(ahora):
         enviar_mensaje(r.chat_id, f"⏰ Recordatorio: {r.texto}")
-        almacen.marcar_enviado(r.id)
+        if r.repetir != "no":
+            almacen.reprogramar(r.id, _proxima_ocurrencia(r.cuando_dt(), r.repetir, ahora))
+        else:
+            almacen.marcar_enviado(r.id)
         disparados += 1
     return disparados
 
 
-async def _loop_recordatorios() -> None:
-    """Tarea de fondo: revisa vencimientos cada minuto, para siempre.
+def _armar_briefing(ahora_local: datetime) -> str | None:
+    """El texto del briefing matutino, o None si no hay nada que decir."""
+    tz = _tz_usuario()
+    hoy = ahora_local.date()
+
+    de_hoy = sorted(
+        (r for r in almacen.pendientes() if r.cuando_dt().astimezone(tz).date() == hoy),
+        key=lambda r: r.cuando,
+    )
+    listas = [
+        (nombre, len(items))
+        for nombre in operaciones.listar_listas()
+        if (items := operaciones.leer_lista(nombre))
+    ]
+    if not de_hoy and not listas:
+        return None
+
+    partes = [f"Buen dia. Hoy es {ahora_local.strftime('%d/%m')}."]
+    if de_hoy:
+        partes.append("\nHoy:")
+        for r in de_hoy:
+            partes.append(f"  {r.cuando_dt().astimezone(tz).strftime('%H:%M')}  {r.texto}")
+    if listas:
+        partes.append("\nListas abiertas: " + ", ".join(f"{n} ({c})" for n, c in listas))
+    return "\n".join(partes)
+
+
+def _enviar_briefing_si_toca(ahora_local: datetime | None = None) -> bool:
+    """Manda el briefing una vez por dia, a partir de HORA_BRIEFING.
+
+    Usa un archivo con la fecha del ultimo envio para no repetirlo aunque
+    el loop pase muchas veces dentro de la ventana horaria.
+    """
+    ahora = ahora_local or datetime.now(_tz_usuario())
+    if ahora.hour < HORA_BRIEFING:
+        return False
+
+    estado = operaciones.ruta_boveda() / RUTA_ESTADO_BRIEFING
+    hoy = ahora.date().isoformat()
+    if estado.exists() and estado.read_text(encoding="utf-8").strip() == hoy:
+        return False
+
+    texto = _armar_briefing(ahora)
+    estado.parent.mkdir(parents=True, exist_ok=True)
+    estado.write_text(hoy, encoding="utf-8")  # se marca aunque no haya nada, para no re-chequear
+    if texto is None:
+        return False
+
+    enviar_mensaje(int(os.environ["TELEGRAM_CHAT_ID_AUTORIZADO"]), texto)
+    return True
+
+
+async def _loop_proactivo() -> None:
+    """Tarea de fondo: recordatorios vencidos + briefing matutino, cada minuto.
 
     Corre en el mismo proceso que el webhook (no hace falta EventBridge ni
-    un cron aparte para esto). Una excepcion nunca corta el loop.
+    un cron aparte). Una excepcion nunca corta el loop.
     """
     while True:
         try:
             n = await asyncio.to_thread(_disparar_recordatorios_vencidos)
             if n:
                 logger.info("Recordatorios disparados: %d", n)
+            if await asyncio.to_thread(_enviar_briefing_si_toca):
+                logger.info("Briefing matutino enviado")
         except Exception:
-            logger.exception("Fallo el chequeo de recordatorios; sigo en el proximo tick")
-        await asyncio.sleep(INTERVALO_RECORDATORIOS_SEG)
+            logger.exception("Fallo el loop proactivo; sigo en el proximo tick")
+        await asyncio.sleep(INTERVALO_PROACTIVO_SEG)
 
 
 async def _loop_reindexado() -> None:
@@ -118,7 +212,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     with SqliteSaver.from_conn_string(_ruta_checkpoints()) as checkpointer:
         app.state.grafo = construir_grafo(checkpointer=checkpointer)
         tareas_fondo = [
-            asyncio.create_task(_loop_recordatorios()),
+            asyncio.create_task(_loop_proactivo()),
             asyncio.create_task(_loop_reindexado()),
         ]
         try:
@@ -294,10 +388,6 @@ def _manejar_corregir(texto: str, grafo: Any, config: dict[str, Any]) -> str | N
     return f'Corregido a "{nueva.value}"{antes} y anotado para la evaluacion.{movida}'
 
 
-def _tz_usuario() -> ZoneInfo:
-    return ZoneInfo(os.environ.get("TZ_USUARIO", "America/Argentina/Buenos_Aires"))
-
-
 def _manejar_recordatorios(texto: str) -> str | None:
     """Procesa ``/recordatorios`` (lista los pendientes) y ``/cancelar <id>``.
 
@@ -311,9 +401,10 @@ def _manejar_recordatorios(texto: str) -> str | None:
         if not pend:
             return "No tenes recordatorios pendientes."
         tz = _tz_usuario()
+        cada = {"diario": " (cada dia)", "semanal": " (cada semana)", "mensual": " (cada mes)"}
         lineas = [
             f"- {r.cuando_dt().astimezone(tz).strftime('%d/%m %H:%M')}  {r.texto}"
-            f"   /cancelar {r.id}"
+            f"{cada.get(r.repetir, '')}   /cancelar {r.id}"
             for r in pend
         ]
         return "Recordatorios pendientes:\n" + "\n".join(lineas)

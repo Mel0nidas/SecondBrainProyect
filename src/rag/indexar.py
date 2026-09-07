@@ -24,7 +24,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NamedTuple
 
 import chromadb
 import voyageai
@@ -32,6 +32,14 @@ import voyageai
 from mcp_obsidian import operaciones
 
 logger = logging.getLogger(__name__)
+
+
+class Fragmento(NamedTuple):
+    """Un chunk encontrado por búsqueda semántica, con su nota de origen."""
+
+    texto: str
+    ruta: str
+    titulo: str
 
 NOMBRE_COLECCION = "notas"
 MODELO_EMBEDDINGS = "voyage-3.5-lite"
@@ -150,13 +158,10 @@ def indexar_nota(ruta: str, titulo: str, tags: list[str], contenido: str) -> int
     return len(chunks)
 
 
-def buscar_semantico(consulta: str, top_k: int = 3) -> list[str]:
-    """Busca los chunks cuyo significado esta mas cerca de la consulta.
-
-    Devuelve el texto de cada chunk encontrado (no la nota entera) --
-    seguis el patron "mensajero" del diseño: se le pasa al modelo solo
-    el fragmento puntual, no la boveda completa.
-    """
+def buscar_con_fuente(consulta: str, top_k: int = 3) -> list[Fragmento]:
+    """Como ``buscar_semantico`` pero devuelve, junto al texto de cada
+    chunk, la nota de la que salió (ruta y título) -- para que el
+    Bibliotecario pueda citar la fuente."""
     coleccion = _coleccion()
     if coleccion.count() == 0:
         return []
@@ -165,9 +170,30 @@ def buscar_semantico(consulta: str, top_k: int = 3) -> list[str]:
     resultado = coleccion.query(
         query_embeddings=[vector],  # type: ignore[arg-type]
         n_results=min(top_k, coleccion.count()),
+        include=["documents", "metadatas"],
     )
-    documentos = resultado.get("documents") or [[]]
-    return list(documentos[0])
+    documentos = (resultado.get("documents") or [[]])[0]
+    metadatas = (resultado.get("metadatas") or [[]])[0]
+    fragmentos: list[Fragmento] = []
+    for i, texto in enumerate(documentos):
+        meta = metadatas[i] if i < len(metadatas) else {}
+        fragmentos.append(
+            Fragmento(
+                texto=str(texto),
+                ruta=str(meta.get("ruta", "")),
+                titulo=str(meta.get("titulo", "")),
+            )
+        )
+    return fragmentos
+
+
+def buscar_semantico(consulta: str, top_k: int = 3) -> list[str]:
+    """Busca los chunks cuyo significado esta mas cerca de la consulta.
+
+    Devuelve solo el texto de cada chunk (no la nota entera) -- sigue el
+    patron "mensajero" del diseño. Para la fuente, ver ``buscar_con_fuente``.
+    """
+    return [f.texto for f in buscar_con_fuente(consulta, top_k)]
 
 
 def _parsear_nota(texto: str) -> tuple[str, list[str], str]:
@@ -201,6 +227,13 @@ def reindexar_todo() -> int:
         titulo, tags, cuerpo = _parsear_nota(operaciones.leer_nota(ruta))
         total += indexar_nota(ruta, titulo, tags, cuerpo)
     return total
+
+
+def reindexar_nota(ruta_relativa: str) -> int:
+    """Reindexa una nota puntual (leer + parsear + indexar_nota). La usa
+    el nodo Editar cuando le agrega texto a una nota existente."""
+    titulo, tags, cuerpo = _parsear_nota(operaciones.leer_nota(ruta_relativa))
+    return indexar_nota(ruta_relativa, titulo, tags, cuerpo)
 
 
 # --- Sincronizacion incremental (Fase 12) --------------------------------

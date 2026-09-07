@@ -1,5 +1,5 @@
 // Set de evaluacion del Router (DISEÑO.md §6). Una linea = un caso.
-// Campos: mensaje, intencion (capturar|consultar|tarea|recordatorio|imagen|comando|ambiguo),
+// Campos: mensaje, intencion (capturar|consultar|tarea|recordatorio|editar|imagen|comando|ambiguo),
 //         fuente ("real" = mensaje que Melo mando de verdad, "sintetico" = inventado).
 // Opcionales para capturas: carpeta, tags (todavia no se evaluan, se guardan para mas adelante).
 // Se crece con uso real: el comando /corregir agrega el caso corregido aca.
@@ -23,6 +23,9 @@
 {"mensaje": "en 2 horas recordame sacar la ropa del lavarropas", "intencion": "recordatorio", "fuente": "sintetico"}
 {"mensaje": "el 15 recordame pagar el alquiler", "intencion": "recordatorio", "fuente": "sintetico"}
 {"mensaje": "recordame comprar el regalo para el cumple de mama", "intencion": "recordatorio", "fuente": "sintetico"}
+{"mensaje": "agregale que el precio era 200", "intencion": "editar", "fuente": "sintetico"}
+{"mensaje": "sumale que viene con garantia de un año", "intencion": "editar", "fuente": "sintetico"}
+{"mensaje": "anota tambien que lo vi en mercadolibre", "intencion": "editar", "fuente": "sintetico"}
 {"mensaje": "guarda la foto que te mande recien", "intencion": "imagen", "fuente": "sintetico"}
 {"mensaje": "acordate de la imagen de la pizarra que te pase", "intencion": "imagen", "fuente": "sintetico"}
 {"mensaje": "/estado", "intencion": "comando", "fuente": "real"}

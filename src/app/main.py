@@ -538,7 +538,9 @@ def webhook_telegram(
 
     grafo = request.app.state.grafo
     config = {"configurable": {"thread_id": str(chat_id)}}
-    pausado = bool(grafo.get_state(config).next)
+    snapshot = grafo.get_state(config)
+    pausado = bool(snapshot.next)
+    previos = snapshot.values if isinstance(snapshot.values, dict) else {}
 
     if not pausado:
         # Comandos operativos (/corregir, /recordatorios, /lista, /digest,
@@ -553,8 +555,15 @@ def webhook_telegram(
         # "/probar_confirmacion" dejo el grafo en pausa la vez anterior).
         resultado = grafo.invoke(Command(resume=texto), config=config)
     else:
+        # ``ruta_nota_creada`` se arrastra del checkpoint anterior para que
+        # el nodo Editar ("agregale que...") sepa cual fue la ultima nota.
         resultado = grafo.invoke(
-            Estado(mensaje_usuario=texto, ruta_imagen=ruta_imagen), config=config
+            Estado(
+                mensaje_usuario=texto,
+                ruta_imagen=ruta_imagen,
+                ruta_nota_creada=previos.get("ruta_nota_creada"),
+            ),
+            config=config,
         )
 
     if "__interrupt__" in resultado:

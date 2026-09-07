@@ -15,6 +15,9 @@ clases:
   momento futuro concreto. Suele traer un "cuándo": "el martes",
   "mañana a las 9", "en 2 horas", una fecha. Ej: "recordame llamar al
   banco el martes".
+- editar: el usuario quiere AGREGAR algo a la última nota que guardó
+  recién. Suele empezar con "agregale", "sumale", "añadile", "anotá
+  también", "y también que". Ej: "agregale que el precio era 200".
 - imagen: el mensaje hace referencia a una imagen o foto.
 - comando: el mensaje es un comando explícito que empieza con "/" (por
   ejemplo /ayuda, /estado).

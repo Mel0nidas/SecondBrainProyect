@@ -25,6 +25,7 @@ class Intencion(StrEnum):
     TAREA = "tarea"
     IMAGEN = "imagen"
     RECORDATORIO = "recordatorio"
+    EDITAR = "editar"
     COMANDO = "comando"
     AMBIGUO = "ambiguo"
 

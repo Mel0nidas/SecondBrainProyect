@@ -12,6 +12,7 @@ from grafo.estado import Estado, Intencion
 from grafo.nodos.archivista import archivista
 from grafo.nodos.bibliotecario import bibliotecario
 from grafo.nodos.directo import directo
+from grafo.nodos.editar import editar
 from grafo.nodos.presupuesto import resumen_parcial, verificar_presupuesto
 from grafo.nodos.recordatorio import recordatorio
 from grafo.nodos.router import router
@@ -30,6 +31,8 @@ def _despues_de_verificar(estado: Estado) -> str:
         return "recordatorio"
     if estado.intencion == Intencion.TAREA:
         return "tareas"
+    if estado.intencion == Intencion.EDITAR:
+        return "editar"
     return "directo"
 
 
@@ -66,6 +69,7 @@ def construir_grafo(
     grafo.add_node("directo", directo)  # type: ignore[call-overload]
     grafo.add_node("recordatorio", recordatorio)  # type: ignore[call-overload]
     grafo.add_node("tareas", tareas)  # type: ignore[call-overload]
+    grafo.add_node("editar", editar)  # type: ignore[call-overload]
     grafo.add_node("resumen_parcial", resumen_parcial)  # type: ignore[call-overload]
 
     grafo.set_entry_point("router")
@@ -77,6 +81,7 @@ def construir_grafo(
     grafo.add_edge("bibliotecario", END)
     grafo.add_edge("recordatorio", END)
     grafo.add_edge("tareas", END)
+    grafo.add_edge("editar", END)
     grafo.add_edge("resumen_parcial", END)
 
     return grafo.compile(checkpointer=checkpointer)

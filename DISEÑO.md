@@ -94,7 +94,7 @@ flowchart TD
 ```
 
 **1. ROUTER (nodo con Haiku)**
-- Único trabajo: clasificar la intención del mensaje en una de estas clases: `capturar` (guardar algo), `consultar` (preguntar algo a la bóveda), `tarea` (crear/completar un pendiente), `recordatorio` (pedir un aviso en un momento futuro), `imagen` (llegó foto), `comando` (ayuda, estado, config), `ambiguo`.
+- Único trabajo: clasificar la intención del mensaje en una de estas clases: `capturar` (guardar algo), `consultar` (preguntar algo a la bóveda), `tarea` (crear/completar un pendiente), `recordatorio` (pedir un aviso en un momento futuro), `editar` (agregar algo a la última nota guardada — "agregale que..."), `imagen` (llegó foto), `comando` (ayuda, estado, config), `ambiguo`.
 - Sin herramientas. Devuelve JSON estructurado (clase + confianza). Si `ambiguo`, repregunta al usuario en vez de adivinar.
 - Es el nodo que corre en el 100% de los mensajes → por eso Haiku.
 
@@ -105,7 +105,8 @@ flowchart TD
 
 **3. BIBLIOTECARIO (agente con Sonnet, el "mensajero")**
 - Responde consultas: busca en Chroma (semántico) y/o lee notas puntuales, y devuelve **solo los fragmentos relevantes**, nunca archivos enteros al estado compartido.
-- Herramientas: `buscar_semantico` (Chroma), `leer_nota`, `buscar_por_titulo` (MCP).
+- Herramientas: `buscar_semantico` / `buscar_con_fuente` (Chroma), `leer_nota`, `buscar_por_titulo` (MCP).
+- **Cita la fuente** (Fase 16): cada fragmento le llega numerado con su nota; el prompt le pide `[[wikilinks]]` inline y la respuesta termina con `Fuentes: [[nota]]` (dedupe por nota).
 - Es de solo lectura por diseño: no tiene ninguna herramienta de escritura.
 
 **4. RECORDATORIO (agente con Sonnet) — Fase 10, recurrentes en Fase 13**
@@ -306,6 +307,10 @@ El agente diferido de §2.2, por fin. `src/digestor/`, disparado por el loop pro
 **FASE 15 — Calculador de costos (1 sesión)** — *hecha*
 `/costos` deja de ser un stub. Cada llamada a un modelo (Router/Haiku, agentes/Sonnet, Digestor, y los embeddings de Voyage) registra sus tokens en `90-sistema/costos.jsonl`; el comando suma por modelo de los últimos 30 días y aplica el precio vigente de Anthropic (`costos.registro.PRECIOS`, primera fuente la doc de Anthropic). Muestra también el costo fijo estimado de AWS y aclara que Groq/Voyage están en tier gratuito. El `include_raw=True` para leer `usage_metadata` no cambia ni el request ni la clasificación → sin eval.
 ✅ *`/costos` → "Claude Sonnet: 890k in / 45k out → USD 3.35 … Total LLM USD 3.5 … ~USD 0.12/día".*
+
+**FASE 16 — Citas del Bibliotecario + edición de la última nota (1 sesión)** — *hecha*
+El Bibliotecario ahora devuelve la fuente: `rag.indexar.buscar_con_fuente()` trae ruta + título de cada fragmento, el prompt le pide que cite con `[[wikilinks]]` inline y la respuesta termina con un bloque `Fuentes: [[Nota]]` (dedup por nota). Nueva intención `editar` + nodo `editar.py`: *"agregale que el precio era 200"* suma esa línea a la última nota capturada, sin `/corregir` — el webhook arrastra `ruta_nota_creada` del checkpoint anterior y el nodo usa la MCP tool `agregar_a_nota` (que ya existía) + reindexa. Router tocado → eval re-corrido: 29/31 (93.5%), `editar` 3/3, baseline movido.
+✅ *"¿qué guardé sobre X?" → respuesta que termina en "Fuentes: [[Nota]]"; y "agregale que Y" suma Y a lo último que guardaste.*
 
 ## PARTE 6 — EVALUACIÓN (cómo sabemos que funciona)
 

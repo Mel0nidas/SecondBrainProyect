@@ -94,6 +94,34 @@ def test_buscar_semantico_sin_nada_indexado_no_explota() -> None:
     assert indexar.buscar_semantico("cualquier cosa") == []
 
 
+def test_buscar_con_fuente_trae_ruta_y_titulo() -> None:
+    indexar.indexar_nota(
+        ruta="10-notas/idea-redis.md",
+        titulo="Idea sobre Redis",
+        tags=["infra"],
+        contenido="## Cache\n\nRedis como cache de corto plazo.",
+    )
+
+    fragmentos = indexar.buscar_con_fuente("Redis como cache de corto plazo.", top_k=1)
+
+    assert len(fragmentos) == 1
+    assert fragmentos[0].ruta == "10-notas/idea-redis.md"
+    assert fragmentos[0].titulo == "Idea sobre Redis"
+    assert "Redis" in fragmentos[0].texto
+
+
+def test_reindexar_nota_toma_el_contenido_nuevo() -> None:
+    from mcp_obsidian import operaciones
+
+    ruta = operaciones.crear_nota(titulo="Nota Z", tags=[], contenido="version vieja")
+    operaciones.agregar_a_nota(ruta, "dato agregado despues")
+
+    indexar.reindexar_nota(ruta)
+
+    encontrados = indexar.buscar_semantico("dato agregado despues", top_k=3)
+    assert any("dato agregado despues" in e for e in encontrados)
+
+
 def test_reindexar_nota_borra_los_chunks_viejos() -> None:
     indexar.indexar_nota(
         ruta="00-inbox/nota.md", titulo="Nota", tags=[], contenido="## A\n\nversion vieja"

@@ -32,7 +32,8 @@ RESPUESTAS_FIJAS = {
         "\n"
         "Escribi normal para: agendar un aviso, tambien recurrente\n"
         '  ("recordame X el martes", "todos los lunes recordame Y");\n'
-        'sumar a una lista ("compra pan la proxima vez que vayas al super").\n'
+        'sumar a una lista ("compra pan la proxima vez que vayas al super");\n'
+        'agregar a la ultima nota ("agregale que el precio era 200").\n'
         "Todas las mananas te mando lo que vence hoy + tus listas abiertas,\n"
         "y una vez por semana un repaso de lo que capturaste."
     ),

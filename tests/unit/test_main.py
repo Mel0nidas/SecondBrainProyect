@@ -373,6 +373,46 @@ def test_corregir_mueve_la_nota_y_anota_el_caso(
     assert "tarea" in texto_respuesta
 
 
+def test_editar_la_ultima_nota_por_lenguaje_natural(
+    cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Capturo algo y despues digo "agregale que...": debe sumarse a esa nota."""
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path / "boveda"))
+
+    with (
+        patch("grafo.nodos.router.ChatAnthropic") as router_mock,
+        patch("grafo.nodos.archivista.ChatAnthropic") as arch_mock,
+        patch("grafo.nodos.archivista.llamar_herramienta") as arch_llamar,
+        patch("grafo.nodos.archivista.indexar_nota"),
+        patch("grafo.nodos.editar.llamar_herramienta") as editar_llamar,
+        patch("grafo.nodos.editar.reindexar_nota"),
+        patch("app.main.enviar_mensaje"),
+    ):
+        router_mock.return_value.with_structured_output.return_value.invoke.side_effect = [
+            SalidaRouter(clase=Intencion.CAPTURAR, confianza=0.9),
+            SalidaRouter(clase=Intencion.EDITAR, confianza=0.9),
+        ]
+        arch_mock.return_value.with_structured_output.return_value.invoke.return_value = (
+            NotaPropuesta(titulo="Impresora nueva", tags=[])
+        )
+        arch_llamar.return_value = ["00-inbox/impresora-nueva.md"]
+
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "guarda la impresora nueva"),
+            headers=_headers(),
+        )
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "agregale que salio 200"),
+            headers=_headers(),
+        )
+
+    editar_llamar.assert_called_once_with(
+        "agregar_a_nota", ruta_relativa="00-inbox/impresora-nueva.md", texto="salio 200"
+    )
+
+
 def test_corregir_sin_intencion_muestra_el_uso(cliente: TestClient) -> None:
     with patch("app.main.enviar_mensaje") as enviar_mock:
         cliente.post(

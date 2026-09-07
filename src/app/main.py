@@ -25,7 +25,8 @@ from langgraph.types import Command
 
 from grafo.estado import Estado
 from grafo.grafo import construir_grafo
-from telegram.cliente import enviar_mensaje
+from mcp_obsidian import operaciones
+from telegram.cliente import descargar_archivo, enviar_mensaje
 
 # Se llama ACA, al importar el modulo -- es decir, apenas arranca
 # uvicorn, antes de que se procese ningun pedido. Si se llamara mas
@@ -74,6 +75,24 @@ def _autorizado(chat_id: int, secret_recibido: str | None) -> bool:
     return True
 
 
+def _bajar_foto_si_hay(mensaje: dict[str, Any]) -> str | None:
+    """Si el mensaje trae una foto, la baja y la guarda en la boveda.
+
+    Devuelve la ruta relativa dentro de la boveda, o None si el mensaje
+    no traia ninguna foto.
+
+    Telegram manda cada foto en varios tamaños, del mas chico al mas
+    grande; se usa el ultimo (el de mayor resolucion) porque es el que
+    da mejor transcripcion al pasarlo por vision.
+    """
+    fotos = mensaje.get("photo")
+    if not fotos:
+        return None
+
+    datos = descargar_archivo(fotos[-1]["file_id"])
+    return operaciones.guardar_imagen(datos)
+
+
 @app.get("/salud")
 def salud() -> dict[str, str]:
     """Healthcheck simple: confirma que el servidor esta arriba."""
@@ -100,10 +119,13 @@ def webhook_telegram(
         return {"ok": True}
 
     chat_id = mensaje["chat"]["id"]
-    texto = mensaje.get("text", "")
+    # Una foto viene sin "text": su pie de foto, si tiene, va en "caption".
+    texto = mensaje.get("text") or mensaje.get("caption") or ""
 
     if not _autorizado(chat_id, x_telegram_bot_api_secret_token):
         return {"ok": True}
+
+    ruta_imagen = _bajar_foto_si_hay(mensaje)
 
     grafo = request.app.state.grafo
     config = {"configurable": {"thread_id": str(chat_id)}}
@@ -113,7 +135,9 @@ def webhook_telegram(
         # "/probar_confirmacion" dejo el grafo en pausa la vez anterior).
         resultado = grafo.invoke(Command(resume=texto), config=config)
     else:
-        resultado = grafo.invoke(Estado(mensaje_usuario=texto), config=config)
+        resultado = grafo.invoke(
+            Estado(mensaje_usuario=texto, ruta_imagen=ruta_imagen), config=config
+        )
 
     if "__interrupt__" in resultado:
         pregunta = resultado["__interrupt__"][0].value

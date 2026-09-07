@@ -7,7 +7,7 @@ sea el modelo mas barato y rapido.
 
 from langchain_anthropic import ChatAnthropic
 
-from grafo.estado import Estado, SalidaRouter
+from grafo.estado import Estado, Intencion, SalidaRouter
 from grafo.utilidades import cargar_prompt
 
 # claude-haiku-4-5-20251001 es el modelo Haiku vigente al construir esto
@@ -16,6 +16,13 @@ MODELO_ROUTER = "claude-haiku-4-5-20251001"
 
 
 def router(estado: Estado) -> dict[str, object]:
+    if estado.ruta_imagen is not None:
+        # Si llego una foto, ya sabemos que la intencion es "imagen" --
+        # nos lo dice la estructura del mensaje de Telegram, no hace
+        # falta preguntarselo a un modelo. Se ahorra una llamada a
+        # Haiku por cada foto, y ademas es mas confiable que adivinar.
+        return {"intencion": Intencion.IMAGEN}
+
     modelo = ChatAnthropic(model=MODELO_ROUTER)  # type: ignore[call-arg]
     modelo_estructurado = modelo.with_structured_output(SalidaRouter)
 

@@ -27,6 +27,8 @@
 | Python | **3.12** | 3.13 | Compatibilidad garantizada con todo el stack |
 | HTTPS del webhook | **Caddy + sslip.io** | ALB + ACM, dominio propio | Telegram exige HTTPS. sslip.io da un dominio automático a partir de la IP elástica (ej. 52-1-2-3.sslip.io), y Caddy consigue y renueva el certificado de Let's Encrypt solo, sin tocar código de la app. Cero costo, cero dominio que comprar |
 | Imágenes | **Sí, desde fase 7**: fotos por Telegram → visión de Claude → nota en la bóveda | Ignorar imágenes | Caso de uso real de un segundo cerebro (pizarras, tickets, apuntes en papel) |
+| Audios | **Sí, desde fase 7.5**: audios por Telegram → transcripción → el grafo de siempre | Ignorar audios; Claude directo | La API de Claude **no acepta audio** (lo ignora y lo descarta), así que hace falta un paso previo de transcripción. Una vez transcripto es texto común: el Router y el Archivista ya existentes lo manejan sin cambios |
+| Transcripción de audio | **Groq (Whisper)** | OpenAI Whisper, Deepgram, self-host | Tier gratuito de 2.000 audios/día sin tarjeta — a ~3 mensajes/día el costo es $0. Self-host descartado: el `t3.micro` tiene 1 GB de RAM y sin GPU |
 
 ---
 
@@ -185,6 +187,8 @@ El grafo y el server de Obsidian corren en el mismo proceso/máquina. stdio es e
 ### 4.4 Qué NO entra (repetido a propósito, para resistir la tentación)
 PyTorch, TensorFlow, AutoGen, n8n, Workato, UiPath, Redis, Pinecone, frontend web propio, fine-tuning. Justificación completa en el plan tecnológico anterior. Regla: nada de esto entra sin que la evaluación (§6) demuestre una necesidad que el stack actual no cubre.
 
+**Excepción registrada (fase 7.5): Groq**, como proveedor de transcripción. No entra por gusto sino porque la API de Claude no acepta audio, así que la funcionalidad es imposible sin *algún* servicio de transcripción. Se eligió el más barato a este volumen ($0) y se anotó el costo real en privacidad (§Parte 7, punto 3). Este es el estándar que debe cumplir cualquier agregado futuro: una necesidad que el stack actual no puede cubrir, no una preferencia.
+
 ---
 
 ## PARTE 5 — PLAN DE DESARROLLO PASO A PASO
@@ -219,9 +223,13 @@ Los 4 nodos de §2.2 con sus prompts en `prompts/`. El Archivista y Bibliotecari
 Cuenta AWS con presupuesto/alarma de facturación configurada ANTES que nada (✅ hecho: Free Plan + MFA en root + alarma de $5/mes). IAM Identity Center para credenciales locales, sin access keys de larga duración (✅ hecho). Dockerfile de la app (✅ hecho, probado local con `docker build`/`docker run`). Repositorio ECR para la imagen. Una instancia EC2 (Amazon Linux, Docker) con IP elástica fija, acceso por SSM (sin SSH). Caddy corriendo al lado de la app (docker-compose) haciendo de proxy HTTPS automático via sslip.io. Bóveda+Chroma+SQLite en el disco de la propia instancia (EBS, no hace falta EFS con una sola máquina). Secretos en AWS Systems Manager Parameter Store (SecureString), nunca en el template ni en el repo. Webhook de Telegram apuntado a la URL real. GitHub Actions deployando en push a main (build de la imagen, push a ECR, SSM Run Command para actualizar el contenedor en la instancia).
 ✅ *El bot responde con la compu de Melo apagada, y un push a main llega solo a producción.*
 
-**FASE 7 — Imágenes (1-2 sesiones)**
-Flujo completo de §2.6.
+**FASE 7 — Imágenes (1-2 sesiones)** — *código hecho, falta probar en producción*
+Flujo completo de §2.6. El webhook baja la foto y la guarda en `30-imagenes/`; al grafo le llega solo la **ruta**, nunca los bytes (el estado se serializa al checkpointer en cada paso, y meterle imágenes en base64 lo haría crecer sin control). El Router hace cortocircuito: si hay foto, la intención es `imagen` sin consultar a Haiku — lo dice la estructura del mensaje de Telegram, no hace falta un modelo para adivinarlo.
 ✅ *Foto de una pizarra/apunte por Telegram → nota con transcripción en `30-imagenes/`, encontrable después por búsqueda semántica.*
+
+**FASE 7.5 — Audios (1 sesión)**
+Audio por Telegram → descarga (mismo código que las fotos) → transcripción con Groq → el texto entra al grafo como si se hubiera tipeado. **No hace falta ningún agente nuevo**: el Router ya distingue `capturar` de `tarea`, y el Archivista ya sabe guardar. Telegram manda los audios en OGG/Opus; verificar al construir que Groq lo acepte sin transcodificar.
+✅ *Audio hablado por Telegram → nota en la bóveda con lo que se dijo, ruteada correctamente según sea idea o tarea.*
 
 **FASE 8 (opcional, para portfolio)**
 Idea a definir cuando se llegue ahí -- por ejemplo, un dominio propio en vez de depender de sslip.io, o migrar a Fargate/ECS mas adelante si el proyecto crece a necesitar mas de una instancia.
@@ -242,10 +250,11 @@ Armar `eval/mensajes.jsonl` (§6) con mensajes reales acumulados durante las fas
 
 ---
 
-## PARTE 7 — PRIVACIDAD (los dos tramos identificados, ahora con decisión)
+## PARTE 7 — PRIVACIDAD (los tramos identificados, con decisión)
 
-1. **Datos que pasan por el LLM externo**: aceptado como trade-off consciente para un asistente personal. Mitigación: solo se envía al modelo el mensaje del turno + snippets puntuales (patrón mensajero), nunca la bóveda entera.
+1. **Datos que pasan por el LLM externo**: aceptado como trade-off consciente para un asistente personal. Mitigación: solo se envía al modelo el mensaje del turno + snippets puntuales (patrón mensajero), nunca la bóveda entera. Desde la fase 7 esto incluye las **fotos**, que van enteras a Claude para que las lea.
 2. **Dónde vive la bóveda**: en el disco de la instancia EC2 de Melo (cuenta propia, volumen EBS cifrado en reposo por defecto). Sincronización a dispositivos por el mecanismo elegido en la decisión de headless. No hay terceros adicionales con acceso al contenido.
+3. **Transcripción de audio (desde fase 7.5)**: un **tercer** proveedor externo (Groq) recibe cada audio que Melo mande. Es un punto de salida de datos que antes no existía — se acepta a conciencia, y queda anotado acá para que la decisión no se pierda. Si en algún momento molesta, la salida es self-hosting de Whisper, que hoy no entra en un `t3.micro`.
 
 ---
 

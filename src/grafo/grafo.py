@@ -20,7 +20,7 @@ def _despues_de_verificar(estado: Estado) -> str:
     """Arista condicional: decide a donde ir despues de contar el paso."""
     if estado.presupuesto.excedido():
         return "resumen_parcial"
-    if estado.intencion in (Intencion.CAPTURAR, Intencion.TAREA):
+    if estado.intencion in (Intencion.CAPTURAR, Intencion.TAREA, Intencion.IMAGEN):
         return "archivista"
     if estado.intencion == Intencion.CONSULTAR:
         return "bibliotecario"

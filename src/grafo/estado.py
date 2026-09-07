@@ -48,6 +48,19 @@ class NotaPropuesta(BaseModel):
     tags: list[str]
 
 
+class NotaImagenPropuesta(BaseModel):
+    """Lo que le pedimos a Claude (con vision) al capturar una foto.
+
+    Igual que ``NotaPropuesta`` pero con dos campos mas, que salen de
+    mirar la imagen: lo que dice el texto visible, y de que se trata.
+    """
+
+    titulo: str
+    tags: list[str]
+    transcripcion: str
+    descripcion: str
+
+
 class Presupuesto(BaseModel):
     """Limite de gasto de una corrida del grafo (DISEÑO.md §2.4.3).
 
@@ -69,6 +82,11 @@ class Estado(BaseModel):
     """El estado que viaja por todo el grafo, de nodo en nodo."""
 
     mensaje_usuario: str
+    # Ruta relativa a la boveda de la foto que llego por Telegram, si
+    # llego alguna (Fase 7). Se guarda la RUTA, no los bytes: el estado
+    # entero se serializa al checkpointer de SQLite en cada paso, y
+    # meterle imagenes en base64 lo haria crecer sin control.
+    ruta_imagen: str | None = None
     intencion: Intencion | None = None
     snippets: list[str] = Field(default_factory=list)
     respuesta_final: str | None = None

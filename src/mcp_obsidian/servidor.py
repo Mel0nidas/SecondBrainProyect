@@ -14,9 +14,18 @@ mcp = MCPServer("boveda-obsidian")
 
 
 @mcp.tool()
-def crear_nota(titulo: str, tags: list[str], contenido: str) -> str:
-    """Crea una nota nueva en 00-inbox/ con frontmatter. Devuelve su ruta."""
-    return operaciones.crear_nota(titulo, tags, contenido)
+def crear_nota(
+    titulo: str,
+    tags: list[str],
+    contenido: str,
+    carpeta: str = operaciones.CARPETA_INBOX,
+    origen: str = "cli",
+) -> str:
+    """Crea una nota nueva con frontmatter. Devuelve su ruta.
+
+    Por defecto va a 00-inbox/. Las notas de fotos usan 30-imagenes/.
+    """
+    return operaciones.crear_nota(titulo, tags, contenido, carpeta, origen)
 
 
 @mcp.tool()

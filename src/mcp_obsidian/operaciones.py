@@ -11,10 +11,11 @@ Obsidian, tomada de la variable de entorno ``RUTA_BOVEDA_OBSIDIAN``.
 
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 CARPETA_INBOX = "00-inbox"
+CARPETA_IMAGENES = "30-imagenes"
 
 
 def ruta_boveda() -> Path:
@@ -34,24 +35,54 @@ def _slug(texto: str) -> str:
     return texto[:60] or "nota"
 
 
-def crear_nota(titulo: str, tags: list[str], contenido: str) -> str:
-    """Crea una nota markdown en 00-inbox/, con frontmatter (DISEÑO.md §2.5)."""
-    carpeta = ruta_boveda() / CARPETA_INBOX
-    carpeta.mkdir(parents=True, exist_ok=True)
+def crear_nota(
+    titulo: str,
+    tags: list[str],
+    contenido: str,
+    carpeta: str = CARPETA_INBOX,
+    origen: str = "cli",
+) -> str:
+    """Crea una nota markdown con frontmatter (DISEÑO.md §2.5).
 
-    ruta_relativa = f"{CARPETA_INBOX}/{_slug(titulo)}.md"
+    Por defecto cae en 00-inbox/, que es donde va todo lo capturado.
+    ``carpeta`` existe para las notas de imagenes (Fase 7), que viven
+    en 30-imagenes/ al lado de su foto.
+    """
+    destino = ruta_boveda() / carpeta
+    destino.mkdir(parents=True, exist_ok=True)
+
+    ruta_relativa = f"{carpeta}/{_slug(titulo)}.md"
     ruta_archivo = ruta_boveda() / ruta_relativa
 
     tags_yaml = ", ".join(tags)
     frontmatter = (
         "---\n"
         f"fecha: {date.today().isoformat()}\n"
-        "origen: cli\n"
+        f"origen: {origen}\n"
         f"tags: [{tags_yaml}]\n"
         "estado: inbox\n"
         "---\n\n"
     )
     ruta_archivo.write_text(frontmatter + f"# {titulo}\n\n{contenido}\n", encoding="utf-8")
+    return ruta_relativa
+
+
+def guardar_imagen(datos: bytes, extension: str = "jpg") -> str:
+    """Guarda una foto en 30-imagenes/ y devuelve su ruta relativa.
+
+    El nombre se arma con la fecha y hora exacta, para que dos fotos
+    mandadas el mismo dia no se pisen entre si.
+
+    A diferencia del resto de las operaciones, esta la llama el webhook
+    (``app/main.py``), no un agente: los bytes de una imagen no pasan
+    por el protocolo MCP ni por el estado del grafo, solo su ruta.
+    """
+    destino = ruta_boveda() / CARPETA_IMAGENES
+    destino.mkdir(parents=True, exist_ok=True)
+
+    marca = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    ruta_relativa = f"{CARPETA_IMAGENES}/{marca}.{extension}"
+    (ruta_boveda() / ruta_relativa).write_bytes(datos)
     return ruta_relativa
 
 

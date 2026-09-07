@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from grafo.estado import Intencion, SalidaRouter
+from grafo.estado import Intencion, NotaImagenPropuesta, SalidaRouter
 
 CHAT_ID_AUTORIZADO = 999
 SECRET = "el-secreto-de-prueba"
@@ -118,3 +118,74 @@ def test_probar_confirmacion_pausa_y_despues_resume(cliente: TestClient) -> None
 
     _, texto_final = enviar_mock.call_args_list[1][0]
     assert "CONFIRMADA" in texto_final
+
+
+def test_foto_se_baja_y_llega_al_grafo_como_ruta(
+    cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Una foto se guarda en la boveda y al grafo le llega su RUTA, no los bytes.
+
+    Es la pieza clave de la Fase 7: el estado del grafo se serializa al
+    checkpointer en cada paso, asi que meterle imagenes enteras lo haria
+    crecer sin control.
+    """
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path / "boveda"))
+
+    actualizacion = {
+        "message": {
+            "chat": {"id": CHAT_ID_AUTORIZADO},
+            "caption": "pizarra de la reunion",
+            # Telegram manda varios tamaños; se usa el ultimo (el mayor).
+            "photo": [
+                {"file_id": "chico", "width": 90},
+                {"file_id": "grande", "width": 1280},
+            ],
+        }
+    }
+
+    # Se parchean las dependencias INTERNAS del archivista, no el nodo
+    # entero: el grafo ya quedo compilado con una referencia directa a
+    # la funcion cuando arranco el server, asi que parchear el nombre
+    # del modulo a esta altura no tendria ningun efecto.
+    with (
+        patch("app.main.descargar_archivo") as descargar_mock,
+        patch("app.main.enviar_mensaje"),
+        patch("grafo.nodos.archivista.ChatAnthropic") as modelo_mock,
+        patch("grafo.nodos.archivista.llamar_herramienta") as llamar_mock,
+        patch("grafo.nodos.archivista.indexar_nota"),
+    ):
+        descargar_mock.return_value = b"bytes-de-la-foto"
+        modelo_mock.return_value.with_structured_output.return_value.invoke.return_value = (
+            NotaImagenPropuesta(
+                titulo="Pizarra",
+                tags=["reunion"],
+                transcripcion="lo que se lee",
+                descripcion="una pizarra",
+            )
+        )
+        llamar_mock.return_value = ["30-imagenes/pizarra.md"]
+
+        respuesta = cliente.post(
+            "/webhook/telegram", json=actualizacion, headers=_headers()
+        )
+
+    assert respuesta.status_code == 200
+
+    # Se bajo el tamaño MAS GRANDE, no el primero de la lista.
+    descargar_mock.assert_called_once_with("grande")
+
+    # Y la foto quedo escrita en la carpeta que manda el diseño (§2.5).
+    guardadas = list((tmp_path / "boveda" / "30-imagenes").iterdir())
+    assert len(guardadas) == 1
+    assert guardadas[0].read_bytes() == b"bytes-de-la-foto"
+
+
+def test_mensaje_sin_foto_ni_texto_no_rompe(cliente: TestClient) -> None:
+    """Un update raro (ej: una reaccion) se ignora sin explotar."""
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        respuesta = cliente.post(
+            "/webhook/telegram", json={"edited_message": {}}, headers=_headers()
+        )
+
+    assert respuesta.status_code == 200
+    enviar_mock.assert_not_called()

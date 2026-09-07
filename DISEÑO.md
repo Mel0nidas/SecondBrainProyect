@@ -259,19 +259,20 @@ Contenedor `syncthing` en el `docker-compose` de la instancia, montando `./data/
 **FASE 8 (opcional, para portfolio)**
 Idea a definir cuando se llegue ahí -- por ejemplo, un dominio propio en vez de depender de sslip.io, o migrar a Fargate/ECS mas adelante si el proyecto crece a necesitar mas de una instancia.
 
-**FASE 9 — Evaluación + Digestor (2-3 sesiones)**
-Armar `eval/mensajes.jsonl` (§6) con mensajes reales acumulados durante las fases 5-7. Script que corre el set contra el Router y mide tasa de acierto; se incorpora al CI como test de regresión (falla si el acierto baja del umbral que fije la primera medición). Después, y solo después, el agente Digestor semanal vía EventBridge.
+**FASE 9 — Evaluación + Digestor (2-3 sesiones)** — *harness del Router hecho; falta el set real, `/corregir` y el Digestor*
+Set en `tests/eval/mensajes.jsonl`, runner `tests/eval/evaluar.py`, baseline en `tests/eval/baseline.json`, workflow `eval.yml` (§6). Primera medición: 24/24 con un set casi todo sintético — el número recién dice algo cuando el set se llena de mensajes reales ambiguos. Falta: `/corregir` para alimentar el set desde Telegram, la métrica del Bibliotecario (top-3), y el agente Digestor semanal vía EventBridge.
 ✅ *Cambiar un prompt y saber en un comando si mejoró o empeoró.*
 
 ---
 
 ## PARTE 6 — EVALUACIÓN (cómo sabemos que funciona)
 
-- **Set de prueba**: 20-30 mensajes reales, etiquetados a mano con la intención correcta y (para capturas) la carpeta/tags esperados. Formato JSONL. Pendiente de la sesión anterior; se llena con uso real desde la fase 5.
-- **Métrica principal**: tasa de acierto del Router (es el nodo del que depende todo lo demás).
-- **Métrica secundaria**: para consultas, ¿el Bibliotecario trajo la nota correcta en el top-3?
-- **Regla**: ningún cambio de prompt o de modelo se mergea sin correr el set. Nada de fine-tuning hasta tener meses de datos y una tasa de acierto estancada.
-- **Corrección del día a día en tareas subjetivas** (tema no cerrado de la sesión anterior): decisión pragmática — comando `/corregir` en Telegram que mueve la última nota a donde corresponde Y agrega ese caso al set de evaluación. La corrección manual alimenta el set; el set corrige los prompts. No se automatiza más que eso por ahora.
+- **Set de prueba**: 20-30 mensajes etiquetados a mano con la intención correcta y (para capturas) la carpeta/tags esperados. Formato JSONL, en `tests/eval/mensajes.jsonl`. Cada caso lleva un campo `fuente` (`real` | `sintetico`). Arranca chico y mayormente sintético; crece con uso real vía `/corregir`.
+- **Métrica principal**: tasa de acierto del Router (es el nodo del que depende todo lo demás). La corre `tests/eval/evaluar.py` contra el Router real (pega a la API de Claude).
+- **Baseline y umbral**: `tests/eval/baseline.json` guarda la última tasa aceptada; una corrida falla si cae más de 5 puntos por debajo (margen para el ruido del modelo). El baseline se re-fija a mano (`--actualizar-baseline`) junto con el cambio que lo justifica.
+- **Métrica secundaria** (todavía no implementada): para consultas, ¿el Bibliotecario trajo la nota correcta en el top-3?
+- **Regla**: ningún cambio de prompt o de modelo del Router se mergea sin correr el set. Lo fuerza el workflow `.github/workflows/eval.yml`, que corre en PRs que tocan `src/grafo/prompts/**`, `router.py` o `estado.py`, y a mano (`workflow_dispatch`). Necesita `ANTHROPIC_API_KEY` como secret de GitHub (es una API key de Anthropic, no una credencial de AWS — la excepción consciente a "sin secrets en GitHub"). Nada de fine-tuning hasta tener meses de datos y una tasa de acierto estancada.
+- **Corrección del día a día en tareas subjetivas**: comando `/corregir` en Telegram que mueve la última nota a donde corresponde Y agrega ese caso al set de evaluación (a implementar). La corrección manual alimenta el set; el set corrige los prompts.
 
 ---
 

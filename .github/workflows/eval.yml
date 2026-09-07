@@ -1,0 +1,42 @@
+name: Eval
+
+# El set de evaluacion del Router pega a la API real de Claude (cuesta
+# unos centavos por corrida), asi que NO va en el CI de cada push. Corre:
+#   - a mano, desde la pestana Actions (workflow_dispatch)
+#   - en PRs que tocan los prompts o el nodo Router (donde una regresion
+#     de clasificacion es un riesgo real)
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/grafo/prompts/**"
+      - "src/grafo/nodos/router.py"
+      - "src/grafo/estado.py"
+      - "tests/eval/**"
+
+jobs:
+  eval-router:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Correr el set de evaluacion del Router
+        env:
+          # Agregar en Settings -> Secrets and variables -> Actions -> Secrets.
+          # Es una API key de Anthropic, no una credencial de AWS.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # El eval no necesita trazas; que no intente mandarlas.
+          LANGSMITH_TRACING: "false"
+        run: uv run python -m tests.eval.evaluar

@@ -58,10 +58,14 @@ Self-hosted LiveSync + CouchDB, Syncthing). Las tres primeras necesitan
 en cambio escribe archivos markdown planos. Syncthing sincroniza archivos
 directamente, así que encaja sin sumar un Obsidian headless ni una base de
 datos. Corre como un contenedor más en el `docker-compose` de la
-instancia, montando `./data/boveda`. La conexión con la PC de Melo va
-**P2P por los relays públicos de Syncthing** (tráfico cifrado punta a
-punta; el relay no puede leer el contenido) — no se abre ningún puerto
-nuevo en el Security Group. Gratis, sin cuenta de terceros.
+instancia, montando `./data/boveda`. **No se abre ningún puerto nuevo en
+el Security Group** (solo 80/443): la conexión con la PC de Melo se
+establece igual, P2P y directa, por perforación de NAT sobre UDP/QUIC
+(Syncthing en ambos extremos marca hacia afuera a la vez, y el firewall
+stateful de AWS deja pasar el tráfico de retorno). Los relays públicos de
+Syncthing quedan como fallback si esa conexión directa no se logra. En
+cualquier caso el tráfico va cifrado punta a punta — ni el relay ni nadie
+en el medio ve el contenido. Gratis, sin cuenta de terceros.
 *Hueco conocido*: una nota que Melo cree/edite en su Obsidian local y que
 Syncthing suba al server **no queda en el índice de Chroma** (el bot solo
 indexa lo que crea él, en el nodo Archivista). El Bibliotecario no la
@@ -248,8 +252,8 @@ Flujo completo de §2.6. El webhook baja la foto y la guarda en `30-imagenes/`; 
 Audio por Telegram → descarga (mismo código que las fotos) → transcripción con Groq (`whisper-large-v3-turbo`, por HTTP directo al endpoint compatible con OpenAI, forzando `language=es`) → el texto entra al grafo como si se hubiera tipeado. **No hace falta ningún agente nuevo**: el Router ya distingue `capturar` de `tarea`, y el Archivista ya sabe guardar. Telegram manda las notas de voz en OGG/Opus, que Whisper acepta sin transcodificar. Cubre el campo `voice` (botón de micrófono) y `audio` (archivo de audio).
 ✅ *Audio hablado por Telegram → nota en la bóveda con lo que se dijo, ruteada correctamente según sea idea o tarea.*
 
-**FASE 7.6 — Sincronización de la bóveda (1 sesión)** — *server hecho; falta emparejar la PC de Melo*
-Contenedor `syncthing` en el `docker-compose` de la instancia, montando `./data/boveda`. Sincroniza P2P contra el Obsidian local de Melo por los relays públicos de Syncthing (sin abrir puertos, tráfico cifrado punta a punta). Se sumó 1 GB de swap a la instancia primero (`t3.micro` = 1 GB RAM, sin swap, y Syncthing suma ~25 MB). Detalle y hueco conocido (índice RAG) en §2.1. La configuración del folder/device es un paso manual único, como los secretos (el `UserData` solo corre al crear la máquina).
+**FASE 7.6 — Sincronización de la bóveda (1 sesión)** — *terminada y verificada*
+Contenedor `syncthing` en el `docker-compose` de la instancia, montando `./data/boveda`. Sincroniza P2P (directo, ver §2.1) contra el Obsidian local de Melo en `D:\Second Brain`, en modo *send & receive* (bóveda única unificada). Se sumó 1 GB de swap a la instancia primero (`t3.micro` = 1 GB RAM, sin swap, y Syncthing suma ~25 MB). Detalle y hueco conocido (índice RAG) en §2.1. La configuración del folder/device es un paso manual único, como los secretos (el `UserData` solo corre al crear la máquina). En la PC de Melo corre el Syncthing oficial v2 (SyncTrayzor quedó descartado: no arranca con Syncthing v2).
 ✅ *El bot escribe una nota → aparece en el Obsidian de la PC de Melo en segundos, y al revés.*
 
 **FASE 8 (opcional, para portfolio)**
@@ -274,7 +278,7 @@ Armar `eval/mensajes.jsonl` (§6) con mensajes reales acumulados durante las fas
 ## PARTE 7 — PRIVACIDAD (los tramos identificados, con decisión)
 
 1. **Datos que pasan por el LLM externo**: aceptado como trade-off consciente para un asistente personal. Mitigación: solo se envía al modelo el mensaje del turno + snippets puntuales (patrón mensajero), nunca la bóveda entera. Desde la fase 7 esto incluye las **fotos**, que van enteras a Claude para que las lea.
-2. **Dónde vive la bóveda**: en el disco de la instancia EC2 de Melo (cuenta propia, volumen EBS cifrado en reposo por defecto). Sincronización a dispositivos por **Syncthing** (ver §2.1): P2P, cifrado punta a punta, sin cuenta de terceros. Los relays públicos de Syncthing enrutan el tráfico pero no pueden descifrarlo. No hay terceros adicionales con acceso al contenido.
+2. **Dónde vive la bóveda**: en el disco de la instancia EC2 de Melo (cuenta propia, volumen EBS cifrado en reposo por defecto). Sincronización a dispositivos por **Syncthing** (ver §2.1): P2P (directa por perforación de NAT; relay solo como fallback), cifrado punta a punta, sin cuenta de terceros. Ni un relay ni nadie en el medio ve el contenido. No hay terceros adicionales con acceso.
 3. **Transcripción de audio (desde fase 7.5)**: un **tercer** proveedor externo (Groq) recibe cada audio que Melo mande. Es un punto de salida de datos que antes no existía — se acepta a conciencia, y queda anotado acá para que la decisión no se pierda. Si en algún momento molesta, la salida es self-hosting de Whisper, que hoy no entra en un `t3.micro`.
 
 ---

@@ -139,9 +139,11 @@ class Estado(BaseModel):
 boveda/
   00-inbox/        ← todo lo capturado cae acá primero
   10-notas/        ← notas permanentes (el Archivista promueve desde inbox)
-  20-tareas/       ← una nota por lista, checkboxes markdown
+  20-tareas/       ← pendientes. Hoy: una nota por tarea (el Archivista
+                     manda acá lo que el Router clasifica como `tarea`).
+                     Objetivo a futuro: una nota por lista con checkboxes.
   30-imagenes/     ← foto original + nota .md con la descripción/transcripción
-  90-sistema/      ← logs legibles, digest semanal (fase 9)
+  90-sistema/      ← logs legibles (ej. correcciones.jsonl de /corregir), digest semanal (fase 9)
 ```
 
 Convención de frontmatter en cada nota: `fecha`, `origen: telegram`, `tags`, `estado: inbox|permanente`. El Archivista la respeta siempre; el índice de Chroma la usa como metadata filtrable.

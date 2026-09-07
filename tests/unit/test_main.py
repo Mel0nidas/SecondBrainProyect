@@ -336,7 +336,9 @@ def test_corregir_mueve_la_nota_y_anota_el_caso(
         # El mock de la tool MCP crea la nota de verdad en la boveda temporal,
         # para que /corregir tenga un archivo real que mover.
         llamar_mock.side_effect = lambda _nombre, **kw: [
-            operaciones.crear_nota(kw["titulo"], kw["tags"], kw["contenido"])
+            operaciones.crear_nota(
+                kw["titulo"], kw["tags"], kw["contenido"], kw["carpeta"], kw["origen"]
+            )
         ]
 
         cliente.post(

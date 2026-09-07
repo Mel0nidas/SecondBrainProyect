@@ -18,7 +18,7 @@ import mimetypes
 
 from langchain_anthropic import ChatAnthropic
 
-from grafo.estado import Estado, NotaImagenPropuesta, NotaPropuesta
+from grafo.estado import Estado, Intencion, NotaImagenPropuesta, NotaPropuesta
 from grafo.utilidades import cargar_prompt
 from mcp_obsidian import operaciones
 from mcp_obsidian.cliente import llamar_herramienta
@@ -42,11 +42,22 @@ def _archivar_texto(estado: Estado) -> dict[str, object]:
     propuesta = modelo_estructurado.invoke(entrada)
     assert isinstance(propuesta, NotaPropuesta)
 
+    # Una "tarea" va a 20-tareas/; el resto de las capturas a 00-inbox/.
+    # (El modelo del Archivista ya no elige carpeta; la decide la intencion
+    # que trajo el Router.)
+    carpeta = (
+        operaciones.CARPETA_TAREAS
+        if estado.intencion == Intencion.TAREA
+        else operaciones.CARPETA_INBOX
+    )
+
     resultado = llamar_herramienta(
         "crear_nota",
         titulo=propuesta.titulo,
         tags=propuesta.tags,
         contenido=estado.mensaje_usuario,
+        carpeta=carpeta,
+        origen="telegram",
     )
     ruta = resultado[0]
 

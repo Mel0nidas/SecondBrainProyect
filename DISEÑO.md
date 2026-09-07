@@ -72,7 +72,7 @@ indexa lo que crea él, en el nodo Archivista). El Bibliotecario no la
 encontraría por búsqueda semántica hasta que se agregue un re-indexado
 (watcher en el server o reindex periódico) — queda para Fase 9.
 
-### 2.2 Los agentes (5 nodos de decisión: Router + Archivista + Bibliotecario + Recordatorio + directo)
+### 2.2 Los agentes (6 nodos de decisión: Router + Archivista + Bibliotecario + Recordatorio + Tareas + directo)
 
 Principio de diseño: **la menor cantidad de agentes que cubra los casos de uso**. Cada agente extra es más tokens, más latencia y más superficie de error. Se arranca con estos y no se agregan más hasta que la evaluación (§6) demuestre que hace falta.
 
@@ -96,10 +96,9 @@ flowchart TD
 - Es el nodo que corre en el 100% de los mensajes → por eso Haiku.
 
 **2. ARCHIVISTA (agente con Sonnet)**
-- Escribe en la bóveda: decide título, carpeta destino, tags, y links `[[wikilinks]]` a notas existentes.
+- Maneja las **capturas** (`capturar`) y las **imágenes** (`imagen`): decide título y tags, y escribe la nota en `00-inbox/` (las de imagen en `30-imagenes/`). Las `tarea` ya no pasan por acá — las agarra el nodo Tareas.
 - Herramientas (todas vía MCP Obsidian): `crear_nota`, `agregar_a_nota`, `listar_carpeta`, `leer_nota`.
 - **NO tiene** herramienta de borrar ni de sobrescribir completo. Regla de la sesión anterior: la restricción es de código, no de prompt.
-- Para linkear bien, le pide al Bibliotecario "¿hay notas relacionadas con X?" en vez de leer la bóveda entera (patrón mensajero, decidido antes).
 
 **3. BIBLIOTECARIO (agente con Sonnet, el "mensajero")**
 - Responde consultas: busca en Chroma (semántico) y/o lee notas puntuales, y devuelve **solo los fragmentos relevantes**, nunca archivos enteros al estado compartido.
@@ -113,7 +112,13 @@ flowchart TD
 - **El disparo NO lo hace este nodo**: un loop en `app/main.py` revisa vencimientos cada minuto y manda el aviso por Telegram. Es el primer comportamiento *proactivo* del bot (antes solo respondía). Se eligió un loop en el mismo proceso en vez de EventBridge/Lambda: todo vive en un contenedor y no hace falta más.
 - Comandos operativos asociados (en el webhook, no en el grafo): `/recordatorios` lista los pendientes, `/cancelar <id>` cancela uno.
 
-**5. Nodo de respuesta directa (sin LLM o con Haiku)**
+**5. TAREAS (agente con Sonnet) — Fase 11**
+- Maneja la intención `tarea` como **listas con checkboxes**, no una nota por tarea. *"comprá pan la próxima vez que vayas al súper"* → `- [ ] pan` en `20-tareas/compras.md`.
+- Del mensaje saca: la operación (`agregar` / `completar` / `mostrar`), a qué lista, y los items. El modelo elige la lista si el usuario no la nombra (`compras` si suena a súper, `pendientes` si no).
+- Herramientas (código directo sobre la bóveda, no MCP): `agregar_a_lista`, `marcar_en_lista`, `leer_lista`. Marcar hecho es `- [x]` (queda el historial). No borra líneas.
+- Comando asociado (en el webhook): `/lista` nombra las listas, `/lista <nombre>` la muestra.
+
+**6. Nodo de respuesta directa (sin LLM o con Haiku)**
 - Comandos fijos (`/ayuda`, `/estado`, `/costos`) se responden con texto plantillado. Cero tokens de Sonnet.
 
 **Agente diferido a fase 9 (no construir antes): DIGESTOR** — resumen periódico (semanal) de lo capturado, detección de notas huérfanas, sugerencia de links. Se difiere porque no responde a mensajes (corre por cron/EventBridge) y no bloquea nada del flujo principal.
@@ -146,11 +151,12 @@ class Estado(BaseModel):
 boveda/
   00-inbox/        ← todo lo capturado cae acá primero
   10-notas/        ← notas permanentes (el Archivista promueve desde inbox)
-  20-tareas/       ← pendientes. Hoy: una nota por tarea (el Archivista
-                     manda acá lo que el Router clasifica como `tarea`).
-                     Objetivo a futuro: una nota por lista con checkboxes.
+  20-tareas/       ← una nota por lista, con checkboxes markdown (Fase 11).
+                     Ej: compras.md, farmacia.md, viaje.md. El nodo Tareas
+                     agrega "- [ ] item" y marca "- [x]" al completar.
   30-imagenes/     ← foto original + nota .md con la descripción/transcripción
-  90-sistema/      ← logs legibles (ej. correcciones.jsonl de /corregir), digest semanal (fase 9)
+  90-sistema/      ← logs legibles (correcciones.jsonl de /corregir,
+                     recordatorios.jsonl), digest semanal (fase 9)
 ```
 
 Convención de frontmatter en cada nota: `fecha`, `origen: telegram`, `tags`, `estado: inbox|permanente`. El Archivista la respeta siempre; el índice de Chroma la usa como metadata filtrable.
@@ -275,6 +281,10 @@ Set en `tests/eval/mensajes.jsonl`, runner `tests/eval/evaluar.py`, baseline en 
 **FASE 10 — Recordatorios / proactividad (1 sesión)** — *hecha*
 Primer paso fuera del patrón puramente reactivo. Intención `recordatorio` en el Router → nodo que resuelve el "cuándo" (relativo a `TZ_USUARIO`) y da de alta el registro en `90-sistema/recordatorios.jsonl`. Un loop en `app/main.py` (cada 60s, mismo proceso, sin EventBridge) revisa vencimientos y manda el aviso por Telegram. `/recordatorios` y `/cancelar <id>` para administrarlos. El eval confirmó que las otras 6 intenciones no se rompieron. Detalle en §2.2.
 ✅ *"recordame llamar al banco el martes 10am" → el martes a las 10 llega un mensaje del bot.*
+
+**FASE 11 — Listas de tareas (1 sesión)** — *hecha*
+La intención `tarea` deja el modelo "una nota por tarea" y pasa a **listas con checkboxes** (§2.2, nodo Tareas). Sin tocar el Router (la intención ya existía) → sin re-correr el eval. El Archivista quedó solo para capturas e imágenes. Falta natural-language para *mostrar* una lista (hoy es `/lista <nombre>`); *agregar* y *marcar hecho* sí funcionan hablando normal.
+✅ *"compra pan y leche la próxima vez que vayas al súper" → aparecen en `20-tareas/compras.md`; "ya compré el pan" lo tacha.*
 
 ---
 

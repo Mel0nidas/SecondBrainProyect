@@ -127,3 +127,47 @@ def test_mover_nota_inexistente_no_explota(
     resultado = operaciones.mover_nota("00-inbox/fantasma.md", operaciones.CARPETA_TAREAS)
 
     assert "No existe" in resultado
+
+
+def test_agregar_a_lista_crea_y_no_repite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+
+    abiertos = operaciones.agregar_a_lista("compras", ["pan", "leche"])
+    assert abiertos == ["pan", "leche"]
+
+    # "pan" ya esta -> no se duplica; "cafe" es nuevo.
+    abiertos = operaciones.agregar_a_lista("compras", ["Pan", "cafe"])
+    assert abiertos == ["pan", "leche", "cafe"]
+
+    contenido = (tmp_path / "20-tareas" / "compras.md").read_text(encoding="utf-8")
+    assert contenido.startswith("---")
+    assert "# Compras" in contenido
+    assert contenido.count("- [ ] pan") == 1
+
+
+def test_marcar_en_lista_tacha_y_reporta_faltantes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    operaciones.agregar_a_lista("compras", ["pan integral", "leche"])
+
+    marcados, faltantes = operaciones.marcar_en_lista("compras", ["pan", "servilletas"])
+
+    assert marcados == ["pan integral"]  # match parcial, case-insensitive
+    assert faltantes == ["servilletas"]
+    assert operaciones.leer_lista("compras") == ["leche"]  # "pan integral" ya no esta abierto
+    contenido = (tmp_path / "20-tareas" / "compras.md").read_text(encoding="utf-8")
+    assert "- [x] pan integral" in contenido
+
+
+def test_leer_y_listar_listas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    assert operaciones.leer_lista("compras") == []
+    assert operaciones.listar_listas() == []
+
+    operaciones.agregar_a_lista("compras", ["pan"])
+    operaciones.agregar_a_lista("farmacia", ["ibuprofeno"])
+
+    assert operaciones.listar_listas() == ["compras", "farmacia"]

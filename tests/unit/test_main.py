@@ -454,3 +454,43 @@ def test_comando_recordatorios_vacio(
 
     _, texto = enviar_mock.call_args[0]
     assert "No tenes recordatorios" in texto
+
+
+def test_comando_lista_nombra_y_muestra(
+    cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    operaciones.agregar_a_lista("compras", ["pan", "cafe"])
+
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/lista"),
+            headers=_headers(),
+        )
+        _, nombres = enviar_mock.call_args[0]
+
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/lista compras"),
+            headers=_headers(),
+        )
+        _, detalle = enviar_mock.call_args[0]
+
+    assert "compras" in nombres
+    assert "pan" in detalle and "cafe" in detalle
+
+
+def test_comando_lista_sin_ninguna(
+    cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/lista"),
+            headers=_headers(),
+        )
+
+    _, texto = enviar_mock.call_args[0]
+    assert "Todavia no tenes ninguna lista" in texto

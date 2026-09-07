@@ -18,6 +18,9 @@ CARPETA_INBOX = "00-inbox"
 CARPETA_TAREAS = "20-tareas"
 CARPETA_IMAGENES = "30-imagenes"
 
+# Una linea de checklist markdown: "- [ ] pan" o "- [x] leche".
+_ITEM_LISTA = re.compile(r"^\s*[-*]\s*\[(?P<check>[ xX])\]\s*(?P<texto>.+?)\s*$")
+
 
 def ruta_boveda() -> Path:
     """Lee la ruta de la boveda desde el entorno en cada llamada.
@@ -115,6 +118,97 @@ def mover_nota(ruta_relativa: str, carpeta_destino: str) -> str:
 
     origen.rename(destino)
     return f"{carpeta_destino}/{origen.name}"
+
+
+# --- Listas de tareas (Fase 11) -------------------------------------------
+# Una lista es una nota en 20-tareas/ con items de checklist markdown.
+# Ej: 20-tareas/compras.md con "- [ ] pan" / "- [x] leche".
+
+
+def _ruta_lista(nombre: str) -> Path:
+    return ruta_boveda() / CARPETA_TAREAS / f"{_slug(nombre)}.md"
+
+
+def _items_de(texto: str, solo_abiertos: bool = True) -> list[str]:
+    items: list[str] = []
+    for linea in texto.splitlines():
+        m = _ITEM_LISTA.match(linea)
+        if m and (not solo_abiertos or m.group("check") == " "):
+            items.append(m.group("texto"))
+    return items
+
+
+def agregar_a_lista(nombre_lista: str, items: list[str]) -> list[str]:
+    """Suma items (como "- [ ] ...") a una lista, sin repetir. Crea la lista
+    si no existe. Devuelve los items abiertos que quedan."""
+    ruta = _ruta_lista(nombre_lista)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+
+    if ruta.exists():
+        texto = ruta.read_text(encoding="utf-8")
+    else:
+        frontmatter = (
+            f"---\nfecha: {date.today().isoformat()}\norigen: telegram\ntags: [lista]\n---\n\n"
+        )
+        texto = f"{frontmatter}# {nombre_lista.strip().capitalize()}\n\n"
+
+    ya_estan = {t.lower() for t in _items_de(texto, solo_abiertos=False)}
+    nuevas = [
+        f"- [ ] {item.strip()}"
+        for item in items
+        if item.strip() and item.strip().lower() not in ya_estan
+    ]
+    if nuevas:
+        if not texto.endswith("\n"):
+            texto += "\n"
+        texto += "\n".join(nuevas) + "\n"
+        ruta.write_text(texto, encoding="utf-8")
+
+    return _items_de(texto)
+
+
+def marcar_en_lista(nombre_lista: str, items: list[str]) -> tuple[list[str], list[str]]:
+    """Marca items como hechos ("- [x]"). Devuelve (marcados, no_encontrados)."""
+    ruta = _ruta_lista(nombre_lista)
+    if not ruta.exists():
+        return [], [i.strip() for i in items if i.strip()]
+
+    lineas = ruta.read_text(encoding="utf-8").splitlines()
+    marcados: list[str] = []
+    no_encontrados: list[str] = []
+
+    for pedido in items:
+        objetivo = pedido.strip().lower()
+        if not objetivo:
+            continue
+        for i, linea in enumerate(lineas):
+            m = _ITEM_LISTA.match(linea)
+            if m and m.group("check") == " " and objetivo in m.group("texto").lower():
+                lineas[i] = linea.replace("[ ]", "[x]", 1)
+                marcados.append(m.group("texto"))
+                break
+        else:
+            no_encontrados.append(pedido.strip())
+
+    if marcados:
+        ruta.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    return marcados, no_encontrados
+
+
+def leer_lista(nombre_lista: str) -> list[str]:
+    """Los items abiertos de una lista. Lista vacia si no existe."""
+    ruta = _ruta_lista(nombre_lista)
+    if not ruta.exists():
+        return []
+    return _items_de(ruta.read_text(encoding="utf-8"))
+
+
+def listar_listas() -> list[str]:
+    """Nombres (slug) de las listas que existen en 20-tareas/."""
+    carpeta = ruta_boveda() / CARPETA_TAREAS
+    if not carpeta.exists():
+        return []
+    return sorted(p.stem for p in carpeta.glob("*.md"))
 
 
 def leer_nota(ruta_relativa: str) -> str:

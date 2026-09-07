@@ -49,6 +49,22 @@ class NotaPropuesta(BaseModel):
     tags: list[str]
 
 
+class OperacionLista(BaseModel):
+    """Lo que le pedimos a Claude al interpretar un mensaje de intencion ``tarea``.
+
+    ``operacion``:
+      - ``agregar``: sumar ``items`` a la lista ``lista``.
+      - ``completar``: marcar ``items`` como hechos en ``lista``.
+      - ``mostrar``: solo mostrar ``lista``.
+    ``lista`` nunca viene vacia: si el usuario no la nombra, el modelo
+    elige una ("compras" si suena a super, "pendientes" si no).
+    """
+
+    operacion: str
+    lista: str
+    items: list[str]
+
+
 class RecordatorioPropuesta(BaseModel):
     """Lo que le pedimos a Claude al interpretar "recordame X el martes".
 

@@ -26,14 +26,16 @@ RESPUESTAS_FIJAS = {
         "  re-archiva y lo anota para la evaluacion. Ej: /corregir tarea\n"
         "/recordatorios - lista los recordatorios pendientes\n"
         "/cancelar <id> - cancela un recordatorio\n"
+        "/lista - nombra tus listas; /lista <nombre> - la muestra\n"
         "\n"
-        "Para agendar un aviso, escribi normal: "
-        '"recordame llamar al banco el martes 10am".'
+        'Escribi normal para: agendar un aviso ("recordame X el martes"),\n'
+        'o sumar a una lista ("compra pan la proxima vez que vayas al super").'
     ),
     "/estado": (
         "Corriendo en produccion (AWS, 24/7). Entiende texto, fotos y notas "
-        "de voz por Telegram; guarda notas y tareas, responde consultas con "
-        "busqueda semantica, y agenda recordatorios que te avisa a la hora."
+        "de voz por Telegram; guarda notas, maneja listas de tareas, responde "
+        "consultas con busqueda semantica, y agenda recordatorios que te avisa "
+        "a la hora."
     ),
     "/costos": "Todavia no se trackea el costo real -- llega mas adelante en el plan.",
 }

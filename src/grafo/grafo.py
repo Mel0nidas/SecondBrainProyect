@@ -15,18 +15,21 @@ from grafo.nodos.directo import directo
 from grafo.nodos.presupuesto import resumen_parcial, verificar_presupuesto
 from grafo.nodos.recordatorio import recordatorio
 from grafo.nodos.router import router
+from grafo.nodos.tareas import tareas
 
 
 def _despues_de_verificar(estado: Estado) -> str:
     """Arista condicional: decide a donde ir despues de contar el paso."""
     if estado.presupuesto.excedido():
         return "resumen_parcial"
-    if estado.intencion in (Intencion.CAPTURAR, Intencion.TAREA, Intencion.IMAGEN):
+    if estado.intencion in (Intencion.CAPTURAR, Intencion.IMAGEN):
         return "archivista"
     if estado.intencion == Intencion.CONSULTAR:
         return "bibliotecario"
     if estado.intencion == Intencion.RECORDATORIO:
         return "recordatorio"
+    if estado.intencion == Intencion.TAREA:
+        return "tareas"
     return "directo"
 
 
@@ -62,6 +65,7 @@ def construir_grafo(
     grafo.add_node("bibliotecario", bibliotecario)  # type: ignore[call-overload]
     grafo.add_node("directo", directo)  # type: ignore[call-overload]
     grafo.add_node("recordatorio", recordatorio)  # type: ignore[call-overload]
+    grafo.add_node("tareas", tareas)  # type: ignore[call-overload]
     grafo.add_node("resumen_parcial", resumen_parcial)  # type: ignore[call-overload]
 
     grafo.set_entry_point("router")
@@ -72,6 +76,7 @@ def construir_grafo(
     grafo.add_edge("archivista", END)
     grafo.add_edge("bibliotecario", END)
     grafo.add_edge("recordatorio", END)
+    grafo.add_edge("tareas", END)
     grafo.add_edge("resumen_parcial", END)
 
     return grafo.compile(checkpointer=checkpointer)

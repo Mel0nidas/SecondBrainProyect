@@ -303,6 +303,29 @@ def _manejar_recordatorios(texto: str) -> str | None:
     return None
 
 
+def _manejar_lista(texto: str) -> str | None:
+    """Procesa ``/lista`` (nombra las listas) y ``/lista <nombre>`` (la muestra)."""
+    limpio = texto.strip()
+
+    if limpio == "/lista":
+        nombres = operaciones.listar_listas()
+        if not nombres:
+            return (
+                "Todavia no tenes ninguna lista. Deci algo como "
+                '"compra pan la proxima vez que vayas al super".'
+            )
+        return "Tus listas: " + ", ".join(nombres) + ".\nMira una con /lista <nombre>."
+
+    if limpio.startswith("/lista "):
+        nombre = limpio.split(maxsplit=1)[1].strip()
+        items = operaciones.leer_lista(nombre)
+        if not items:
+            return f'La lista "{nombre}" esta vacia o no existe.'
+        return f"Lista {nombre}:\n" + "\n".join(f"• {i}" for i in items)
+
+    return None
+
+
 @app.get("/salud")
 def salud() -> dict[str, str]:
     """Healthcheck simple: confirma que el servidor esta arriba."""
@@ -353,6 +376,8 @@ def webhook_telegram(
         respuesta_op = _manejar_corregir(texto, grafo, config)
         if respuesta_op is None:
             respuesta_op = _manejar_recordatorios(texto)
+        if respuesta_op is None:
+            respuesta_op = _manejar_lista(texto)
         if respuesta_op is not None:
             enviar_mensaje(chat_id, respuesta_op)
             return {"ok": True}

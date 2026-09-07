@@ -185,3 +185,42 @@ def test_sincronizar_indice_ignora_90_sistema_y_dotdirs() -> None:
     resumen = indexar.sincronizar_indice()
 
     assert resumen == {"actualizadas": 0, "borradas": 0}
+
+
+def test_sincronizar_indice_respeta_el_maximo_por_corrida() -> None:
+    carpeta = _boveda_dir() / "10-notas"
+    carpeta.mkdir(parents=True)
+    for i in range(5):
+        (carpeta / f"n{i}.md").write_text(f"# N{i}\n\ncontenido {i}", encoding="utf-8")
+
+    assert indexar.sincronizar_indice(max_por_corrida=2)["actualizadas"] == 2
+    assert indexar.sincronizar_indice(max_por_corrida=2)["actualizadas"] == 2
+    assert indexar.sincronizar_indice(max_por_corrida=2)["actualizadas"] == 1
+    assert indexar.sincronizar_indice(max_por_corrida=2)["actualizadas"] == 0
+
+
+def test_sincronizar_indice_guarda_progreso_si_una_nota_falla(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    carpeta = _boveda_dir() / "10-notas"
+    carpeta.mkdir(parents=True)
+    (carpeta / "ok.md").write_text("# OK\n\nprimera", encoding="utf-8")
+    (carpeta / "rompe.md").write_text("# Rompe\n\nsegunda", encoding="utf-8")
+
+    real = indexar.indexar_nota
+    llamadas: list[str] = []
+
+    def falla_en_la_segunda(ruta: str, titulo: str, tags: list[str], contenido: str) -> int:
+        llamadas.append(ruta)
+        if len(llamadas) >= 2:
+            raise RuntimeError("rate limit simulado")
+        return real(ruta, titulo, tags, contenido)
+
+    monkeypatch.setattr(indexar, "indexar_nota", falla_en_la_segunda)
+
+    resumen = indexar.sincronizar_indice()
+
+    assert resumen["actualizadas"] == 1  # la primera quedo hecha, la segunda pospuesta
+    # Y el manifiesto ya tiene la primera: una nueva corrida no la repite.
+    monkeypatch.setattr(indexar, "indexar_nota", real)
+    assert indexar.sincronizar_indice()["actualizadas"] == 1  # solo la que habia fallado

@@ -20,6 +20,7 @@ externo que necesite ese aislamiento.
 """
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -29,6 +30,8 @@ import chromadb
 import voyageai
 
 from mcp_obsidian import operaciones
+
+logger = logging.getLogger(__name__)
 
 NOMBRE_COLECCION = "notas"
 MODELO_EMBEDDINGS = "voyage-3.5-lite"
@@ -244,9 +247,21 @@ def _notas_indexables() -> dict[str, float]:
     return encontradas
 
 
-def sincronizar_indice() -> dict[str, int]:
+# Cuantas notas se reindexan por corrida. Voyage sin tarjeta permite solo
+# 3 requests/min; con el tick de ~5 min, 3 por corrida no se acerca al
+# limite. Un backfill grande tarda varias corridas, y esta bien: no hay
+# apuro. El manifiesto se guarda DESPUES DE CADA nota, asi un corte a
+# mitad no pierde lo hecho.
+MAX_POR_CORRIDA = 3
+
+
+def sincronizar_indice(max_por_corrida: int = MAX_POR_CORRIDA) -> dict[str, int]:
     """Empareja el indice con la boveda: reindexa lo que cambio, borra del
     indice lo que ya no existe en disco.
+
+    Procesa como mucho ``max_por_corrida`` notas por llamada (por el rate
+    limit de Voyage). Guarda el manifiesto despues de cada nota, asi que
+    un error a mitad de camino solo pospone lo que falta al proximo tick.
 
     Devuelve ``{"actualizadas": n, "borradas": m}``.
     """
@@ -255,11 +270,20 @@ def sincronizar_indice() -> dict[str, int]:
 
     actualizadas = 0
     for rel, mtime in en_disco.items():
+        if actualizadas >= max_por_corrida:
+            break
         if manifiesto.get(rel) == mtime:
             continue
-        titulo, tags, cuerpo = _parsear_nota(operaciones.leer_nota(rel))
-        indexar_nota(rel, titulo, tags, cuerpo)
+        try:
+            titulo, tags, cuerpo = _parsear_nota(operaciones.leer_nota(rel))
+            indexar_nota(rel, titulo, tags, cuerpo)
+        except Exception as error:
+            # Tipico: rate limit de Voyage. Se corta la corrida y se
+            # reintenta en el proximo tick; lo ya hecho quedo guardado.
+            logger.warning("Reindex de %s pospuesto: %s", rel, error)
+            break
         manifiesto[rel] = mtime
+        _escribir_manifiesto(manifiesto)
         actualizadas += 1
 
     borradas = 0
@@ -268,9 +292,9 @@ def sincronizar_indice() -> dict[str, int]:
             _coleccion().delete(where={"ruta": rel})
             del manifiesto[rel]
             borradas += 1
-
-    if actualizadas or borradas:
+    if borradas:
         _escribir_manifiesto(manifiesto)
+
     return {"actualizadas": actualizadas, "borradas": borradas}
 
 

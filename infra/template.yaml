@@ -195,6 +195,16 @@ Resources:
       # ni actualizar un ID de AMI a mano nunca.
       ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
       IamInstanceProfile: !Ref PerfilInstancia
+      # 20 GB de disco (el default de la AMI son 8, y se llena a los ~9
+      # deploys porque cada uno deja la imagen vieja de Docker). 20 GB
+      # entran en el Free Tier de EBS (30 GB/mes). cloud-init de AL2023
+      # agranda el filesystem solo al arrancar.
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            DeleteOnTermination: true
       SecurityGroupIds:
         - !GetAtt GrupoDeSeguridad.GroupId
       Tags:

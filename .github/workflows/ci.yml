@@ -79,6 +79,12 @@ jobs:
           REMOTE="cd /opt/segundo-cerebro"
           REMOTE="$REMOTE && aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $REGISTRY"
           REMOTE="$REMOTE && docker-compose pull && docker-compose up -d"
+          # El disco de la instancia son 8 GB. Cada deploy deja la imagen
+          # vieja sin tag; sin esto se acumulan y a los ~9 deploys el
+          # disco se llena y el "docker-compose pull" muere con
+          # "no space left on device". "image prune -af" borra las
+          # imagenes que ningun contenedor usa, no toca las activas.
+          REMOTE="$REMOTE && docker image prune -af"
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \

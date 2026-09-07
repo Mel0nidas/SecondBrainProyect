@@ -55,7 +55,10 @@ def _archivar_texto(estado: Estado) -> dict[str, object]:
         ruta=ruta, titulo=propuesta.titulo, tags=propuesta.tags, contenido=estado.mensaje_usuario
     )
 
-    return {"respuesta_final": f'Guardado como "{propuesta.titulo}" ({ruta}).'}
+    return {
+        "respuesta_final": f'Guardado como "{propuesta.titulo}" ({ruta}).',
+        "ruta_nota_creada": ruta,
+    }
 
 
 def _archivar_imagen(estado: Estado, ruta_imagen: str) -> dict[str, object]:
@@ -82,7 +85,10 @@ def _archivar_imagen(estado: Estado, ruta_imagen: str) -> dict[str, object]:
     # encontrable a traves de lo que el modelo leyo en ella.
     indexar_nota(ruta=ruta_nota, titulo=propuesta.titulo, tags=propuesta.tags, contenido=cuerpo)
 
-    return {"respuesta_final": f'Guardada la foto como "{propuesta.titulo}" ({ruta_nota}).'}
+    return {
+        "respuesta_final": f'Guardada la foto como "{propuesta.titulo}" ({ruta_nota}).',
+        "ruta_nota_creada": ruta_nota,
+    }
 
 
 def _describir_imagen(estado: Estado, ruta_imagen: str) -> NotaImagenPropuesta:

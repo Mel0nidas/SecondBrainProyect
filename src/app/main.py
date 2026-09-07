@@ -13,6 +13,7 @@ avisale a esta URL" -- y Telegram nos hace un POST solo cuando hay algo
 nuevo.
 """
 
+import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,7 +24,7 @@ from fastapi import FastAPI, Header, Request
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
-from grafo.estado import Estado
+from grafo.estado import Estado, Intencion
 from grafo.grafo import construir_grafo
 from mcp_obsidian import operaciones
 from telegram.cliente import descargar_archivo, enviar_mensaje
@@ -140,6 +141,88 @@ def _nombre_audio(mime_type: str) -> str:
     return f"audio.{extension}"
 
 
+# /corregir: solo estas intenciones producen una nota que tenga sentido
+# re-archivar. Para el resto (consultar, comando, ambiguo) el comando solo
+# registra el caso para el set de evaluacion, sin mover nada.
+CARPETA_POR_INTENCION = {
+    Intencion.CAPTURAR: operaciones.CARPETA_INBOX,
+    Intencion.TAREA: operaciones.CARPETA_TAREAS,
+    Intencion.IMAGEN: operaciones.CARPETA_IMAGENES,
+}
+
+RUTA_CORRECCIONES = "90-sistema/correcciones.jsonl"
+
+
+def _registrar_correccion(mensaje: str, intencion: Intencion) -> None:
+    """Agrega el caso corregido al log de la boveda (DISEÑO.md §6).
+
+    El contenedor tiene ``src/`` pero no ``tests/``, asi que no puede
+    escribir ``tests/eval/mensajes.jsonl`` directo. Escribe en la boveda,
+    que Syncthing lleva a la PC de Melo; alla ``tests/eval/incorporar.py``
+    lo mergea al set y Melo lo commitea.
+    """
+    archivo = operaciones.ruta_boveda() / RUTA_CORRECCIONES
+    archivo.parent.mkdir(parents=True, exist_ok=True)
+    linea = json.dumps(
+        {"mensaje": mensaje, "intencion": intencion.value, "fuente": "real"},
+        ensure_ascii=False,
+    )
+    with archivo.open("a", encoding="utf-8") as salida:
+        salida.write(linea + "\n")
+
+
+def _manejar_corregir(texto: str, grafo: Any, config: dict[str, Any]) -> str | None:
+    """Procesa ``/corregir <intencion>``.
+
+    Devuelve el texto de respuesta para Telegram, o ``None`` si el mensaje
+    no era un ``/corregir`` (para que siga el flujo normal del grafo).
+
+    Actua sobre el resultado de la corrida ANTERIOR, leyendo su estado del
+    checkpointer -- por eso se resuelve aca, en el webhook, antes de volver
+    a invocar el grafo.
+    """
+    partes = texto.strip().split()
+    if not partes or partes[0] != "/corregir":
+        return None
+
+    validas = ", ".join(i.value for i in Intencion)
+    if len(partes) < 2:
+        return f"Uso: /corregir <intencion>. Opciones: {validas}."
+    try:
+        nueva = Intencion(partes[1].lower())
+    except ValueError:
+        return f'"{partes[1]}" no es una intencion valida. Opciones: {validas}.'
+
+    previo = grafo.get_state(config).values
+    if not isinstance(previo, dict):
+        previo = dict(previo) if previo else {}
+
+    mensaje_previo = previo.get("mensaje_usuario")
+    if not mensaje_previo:
+        return "No hay nada que corregir todavia."
+
+    cruda = previo.get("intencion")
+    intencion_previa = Intencion(cruda) if cruda else None
+    if intencion_previa == nueva:
+        return f'El ultimo mensaje ya quedo como "{nueva.value}". No cambie nada.'
+
+    _registrar_correccion(str(mensaje_previo), nueva)
+
+    ruta_nota = previo.get("ruta_nota_creada")
+    destino = CARPETA_POR_INTENCION.get(nueva)
+    movida = ""
+    if ruta_nota and destino and not str(ruta_nota).startswith(f"{destino}/"):
+        resultado = operaciones.mover_nota(str(ruta_nota), destino)
+        movida = (
+            f" La nota se movio a {resultado}."
+            if resultado.startswith(f"{destino}/")
+            else f" ({resultado})"
+        )
+
+    antes = f' (era "{intencion_previa.value}")' if intencion_previa else ""
+    return f'Corregido a "{nueva.value}"{antes} y anotado para la evaluacion.{movida}'
+
+
 @app.get("/salud")
 def salud() -> dict[str, str]:
     """Healthcheck simple: confirma que el servidor esta arriba."""
@@ -181,8 +264,18 @@ def webhook_telegram(
 
     grafo = request.app.state.grafo
     config = {"configurable": {"thread_id": str(chat_id)}}
+    pausado = bool(grafo.get_state(config).next)
 
-    if grafo.get_state(config).next:
+    if not pausado:
+        # "/corregir" actua sobre la corrida anterior (mueve la nota mal
+        # archivada y anota el caso para la evaluacion). No pasa por el
+        # grafo -- ver DISEÑO.md §6.
+        respuesta_corregir = _manejar_corregir(texto, grafo, config)
+        if respuesta_corregir is not None:
+            enviar_mensaje(chat_id, respuesta_corregir)
+            return {"ok": True}
+
+    if pausado:
         # Hay una ejecucion pausada esperando esta respuesta (Fase 5:
         # "/probar_confirmacion" dejo el grafo en pausa la vez anterior).
         resultado = grafo.invoke(Command(resume=texto), config=config)

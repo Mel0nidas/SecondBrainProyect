@@ -21,7 +21,9 @@ RESPUESTAS_FIJAS = {
         "Comandos disponibles:\n"
         "/ayuda - muestra este mensaje\n"
         "/estado - en que fase esta el proyecto\n"
-        "/costos - resumen de costos (todavia no implementado de verdad)"
+        "/costos - resumen de costos (todavia no implementado de verdad)\n"
+        "/corregir <intencion> - si clasifique mal el ultimo mensaje, lo\n"
+        "  re-archiva y lo anota para la evaluacion. Ej: /corregir tarea"
     ),
     "/estado": (
         "Corriendo en produccion (AWS, 24/7). Ultima fase entregada: 7.5. "

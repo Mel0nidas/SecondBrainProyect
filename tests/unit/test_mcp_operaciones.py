@@ -89,3 +89,41 @@ def test_buscar_por_titulo_sin_boveda_no_explota(
     monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path / "no-existe-todavia"))
 
     assert operaciones.buscar_por_titulo("cualquier cosa") == []
+
+
+def test_mover_nota_reubica_el_archivo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    origen = operaciones.crear_nota(titulo="Llamar al banco", tags=[], contenido="mañana")
+
+    nueva = operaciones.mover_nota(origen, operaciones.CARPETA_TAREAS)
+
+    assert nueva == "20-tareas/llamar-al-banco.md"
+    assert not (tmp_path / origen).exists()
+    assert (tmp_path / nueva).read_text(encoding="utf-8").startswith("---")
+
+
+def test_mover_nota_no_pisa_una_existente(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    origen = operaciones.crear_nota(titulo="Cosa", tags=[], contenido="version nueva")
+    # Ya hay una nota con ese nombre en el destino, con otro contenido.
+    destino = tmp_path / operaciones.CARPETA_TAREAS
+    destino.mkdir()
+    (destino / "cosa.md").write_text("version vieja", encoding="utf-8")
+
+    resultado = operaciones.mover_nota(origen, operaciones.CARPETA_TAREAS)
+
+    assert "no se movio" in resultado
+    assert (tmp_path / origen).exists()  # el original sigue donde estaba
+    assert (destino / "cosa.md").read_text(encoding="utf-8") == "version vieja"
+
+
+def test_mover_nota_inexistente_no_explota(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+
+    resultado = operaciones.mover_nota("00-inbox/fantasma.md", operaciones.CARPETA_TAREAS)
+
+    assert "No existe" in resultado

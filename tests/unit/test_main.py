@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from grafo.estado import Intencion, NotaImagenPropuesta, NotaPropuesta, SalidaRouter
+from mcp_obsidian import operaciones
 
 CHAT_ID_AUTORIZADO = 999
 SECRET = "el-secreto-de-prueba"
@@ -308,3 +309,77 @@ def test_nota_de_voz_se_transcribe_y_entra_al_grafo_como_texto(cliente: TestClie
     assert llamar_mock.call_args.kwargs["contenido"] == "acordate de comprar pan"
 
     enviar_mock.assert_called_once()
+
+
+def test_corregir_mueve_la_nota_y_anota_el_caso(
+    cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """/corregir re-archiva la nota mal clasificada y la suma al set de eval."""
+    boveda = tmp_path / "boveda"
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(boveda))
+
+    salida_captura = SalidaRouter(clase=Intencion.CAPTURAR, confianza=0.9)
+
+    with (
+        patch("grafo.nodos.router.ChatAnthropic") as router_mock,
+        patch("grafo.nodos.archivista.ChatAnthropic") as archivista_mock,
+        patch("grafo.nodos.archivista.llamar_herramienta") as llamar_mock,
+        patch("grafo.nodos.archivista.indexar_nota"),
+        patch("app.main.enviar_mensaje") as enviar_mock,
+    ):
+        router_mock.return_value.with_structured_output.return_value.invoke.return_value = (
+            salida_captura
+        )
+        archivista_mock.return_value.with_structured_output.return_value.invoke.return_value = (
+            NotaPropuesta(titulo="Llamar al contador", tags=["finanzas"])
+        )
+        # El mock de la tool MCP crea la nota de verdad en la boveda temporal,
+        # para que /corregir tenga un archivo real que mover.
+        llamar_mock.side_effect = lambda _nombre, **kw: [
+            operaciones.crear_nota(kw["titulo"], kw["tags"], kw["contenido"])
+        ]
+
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "tengo que llamar al contador el viernes"),
+            headers=_headers(),
+        )
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/corregir tarea"),
+            headers=_headers(),
+        )
+
+    assert not (boveda / "00-inbox" / "llamar-al-contador.md").exists()
+    assert (boveda / "20-tareas" / "llamar-al-contador.md").exists()
+
+    correcciones = (boveda / "90-sistema" / "correcciones.jsonl").read_text(encoding="utf-8")
+    assert '"intencion": "tarea"' in correcciones
+    assert "llamar al contador" in correcciones
+
+    _, texto_respuesta = enviar_mock.call_args_list[-1][0]
+    assert "tarea" in texto_respuesta
+
+
+def test_corregir_sin_intencion_muestra_el_uso(cliente: TestClient) -> None:
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/corregir"),
+            headers=_headers(),
+        )
+
+    _, texto = enviar_mock.call_args[0]
+    assert "Uso: /corregir" in texto
+
+
+def test_corregir_sin_corrida_previa_lo_dice(cliente: TestClient) -> None:
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/corregir tarea"),
+            headers=_headers(),
+        )
+
+    _, texto = enviar_mock.call_args[0]
+    assert "nada que corregir" in texto

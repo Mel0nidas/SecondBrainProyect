@@ -15,6 +15,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 CARPETA_INBOX = "00-inbox"
+CARPETA_TAREAS = "20-tareas"
 CARPETA_IMAGENES = "30-imagenes"
 
 
@@ -84,6 +85,36 @@ def guardar_imagen(datos: bytes, extension: str = "jpg") -> str:
     ruta_relativa = f"{CARPETA_IMAGENES}/{marca}.{extension}"
     (ruta_boveda() / ruta_relativa).write_bytes(datos)
     return ruta_relativa
+
+
+def mover_nota(ruta_relativa: str, carpeta_destino: str) -> str:
+    """Mueve una nota a otra carpeta de la boveda, sin sobrescribir nada.
+
+    La usa SOLO el comando ``/corregir`` del webhook (``app/main.py``)
+    para re-archivar una nota que el bot acaba de crear en la carpeta
+    equivocada. **No** es una tool de MCP: los agentes siguen sin poder
+    mover ni borrar (restriccion de codigo, DISEÑO.md §2.2). Es un
+    ``rename`` puntual sobre un archivo conocido, disparado a mano.
+
+    Devuelve la nueva ruta relativa, o un mensaje de error si el origen
+    no existe, si el destino ya esta ocupado, o si la ruta se sale de la
+    boveda.
+    """
+    base = ruta_boveda().resolve()
+    origen = (ruta_boveda() / ruta_relativa).resolve()
+    if base not in origen.parents:
+        return f"Ruta fuera de la boveda: {ruta_relativa}."
+    if not origen.is_file():
+        return f"No existe una nota en {ruta_relativa}."
+
+    carpeta = ruta_boveda() / carpeta_destino
+    carpeta.mkdir(parents=True, exist_ok=True)
+    destino = carpeta / origen.name
+    if destino.exists():
+        return f"Ya hay una nota en {carpeta_destino}/{origen.name}, no se movio nada."
+
+    origen.rename(destino)
+    return f"{carpeta_destino}/{origen.name}"
 
 
 def leer_nota(ruta_relativa: str) -> str:

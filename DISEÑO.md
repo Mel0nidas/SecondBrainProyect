@@ -259,8 +259,8 @@ Contenedor `syncthing` en el `docker-compose` de la instancia, montando `./data/
 **FASE 8 (opcional, para portfolio)**
 Idea a definir cuando se llegue ahí -- por ejemplo, un dominio propio en vez de depender de sslip.io, o migrar a Fargate/ECS mas adelante si el proyecto crece a necesitar mas de una instancia.
 
-**FASE 9 — Evaluación + Digestor (2-3 sesiones)** — *harness del Router hecho; falta el set real, `/corregir` y el Digestor*
-Set en `tests/eval/mensajes.jsonl`, runner `tests/eval/evaluar.py`, baseline en `tests/eval/baseline.json`, workflow `eval.yml` (§6). Primera medición: 24/24 con un set casi todo sintético — el número recién dice algo cuando el set se llena de mensajes reales ambiguos. Falta: `/corregir` para alimentar el set desde Telegram, la métrica del Bibliotecario (top-3), y el agente Digestor semanal vía EventBridge.
+**FASE 9 — Evaluación + Digestor (2-3 sesiones)** — *harness del Router y `/corregir` hechos; falta el set real y el Digestor*
+Set en `tests/eval/mensajes.jsonl`, runner `tests/eval/evaluar.py`, baseline en `tests/eval/baseline.json`, workflow `eval.yml`, comando `/corregir` + `tests/eval/incorporar.py` para alimentar el set (§6). Primera medición: 24/24 con un set casi todo sintético — el número recién dice algo cuando el set se llena de mensajes reales ambiguos vía `/corregir`. Falta: la métrica del Bibliotecario (top-3) y el agente Digestor semanal vía EventBridge.
 ✅ *Cambiar un prompt y saber en un comando si mejoró o empeoró.*
 
 ---
@@ -272,7 +272,7 @@ Set en `tests/eval/mensajes.jsonl`, runner `tests/eval/evaluar.py`, baseline en 
 - **Baseline y umbral**: `tests/eval/baseline.json` guarda la última tasa aceptada; una corrida falla si cae más de 5 puntos por debajo (margen para el ruido del modelo). El baseline se re-fija a mano (`--actualizar-baseline`) junto con el cambio que lo justifica.
 - **Métrica secundaria** (todavía no implementada): para consultas, ¿el Bibliotecario trajo la nota correcta en el top-3?
 - **Regla**: ningún cambio de prompt o de modelo del Router se mergea sin correr el set. Lo fuerza el workflow `.github/workflows/eval.yml`, que corre en PRs que tocan `src/grafo/prompts/**`, `router.py` o `estado.py`, y a mano (`workflow_dispatch`). Necesita `ANTHROPIC_API_KEY` como secret de GitHub (es una API key de Anthropic, no una credencial de AWS — la excepción consciente a "sin secrets en GitHub"). Nada de fine-tuning hasta tener meses de datos y una tasa de acierto estancada.
-- **Corrección del día a día en tareas subjetivas**: comando `/corregir` en Telegram que mueve la última nota a donde corresponde Y agrega ese caso al set de evaluación (a implementar). La corrección manual alimenta el set; el set corrige los prompts.
+- **Corrección del día a día — comando `/corregir <intencion>`** (hecho): si el Router clasificó mal el último mensaje, `/corregir tarea` (a) mueve la nota que creó el Archivista a la carpeta de la intención correcta y (b) anota el caso para el set de evaluación. Como el contenedor no tiene `tests/`, escribe el caso en `90-sistema/correcciones.jsonl` dentro de la bóveda (que Syncthing lleva a la PC); ahí `tests/eval/incorporar.py` lo mergea al set y Melo lo commitea. El `/corregir` puede *mover* una nota que el bot acaba de crear (op `mover_nota`, disparada a mano, sobre un archivo conocido) — **los agentes siguen sin poder mover ni borrar** (§2.2). La corrección manual alimenta el set; el set corrige los prompts.
 
 ---
 

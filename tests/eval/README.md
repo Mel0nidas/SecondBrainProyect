@@ -45,10 +45,18 @@ Una línea por caso: `{"mensaje": ..., "intencion": ..., "fuente": ...}`.
 (inventado para cubrir un caso). `intencion` es una de
 `capturar | consultar | tarea | imagen | comando | ambiguo`.
 
-El set arranca chico y mayormente sintético. Crece con uso real: el
-comando `/corregir` de Telegram (a implementar) mueve la última nota a
-donde corresponde y agrega ese caso acá. Cuanto más real el set, más
-sirve el número.
+El set arranca chico y mayormente sintético. Crece con uso real:
+
+1. En Telegram, `/corregir <intencion>` cuando el bot clasifica mal.
+   El bot mueve la nota y anota el caso en
+   `90-sistema/correcciones.jsonl` de la bóveda (Syncthing lo trae acá).
+2. `uv run --env-file .env python -m tests.eval.incorporar` (o con
+   `--dry-run` primero) mergea esas líneas a `mensajes.jsonl`, sin
+   duplicar.
+3. Revisás las etiquetas nuevas, corrés `evaluar.py`, y commiteás el
+   set (y `baseline.json` si lo re-fijaste).
+
+Cuanto más real el set, más sirve el número.
 
 ## La regla (DISEÑO.md §6)
 

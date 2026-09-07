@@ -90,4 +90,8 @@ class Estado(BaseModel):
     intencion: Intencion | None = None
     snippets: list[str] = Field(default_factory=list)
     respuesta_final: str | None = None
+    # Ruta relativa de la nota que creo el Archivista en esta corrida, si
+    # creo alguna. Queda en el checkpoint para que el comando /corregir
+    # (Fase 9) sepa que archivo re-archivar si el Router se equivoco.
+    ruta_nota_creada: str | None = None
     presupuesto: Presupuesto = Field(default_factory=Presupuesto)

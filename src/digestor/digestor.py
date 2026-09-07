@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 
+from costos import registro as costos
 from grafo.utilidades import cargar_prompt
 from mcp_obsidian import operaciones
 
@@ -55,8 +56,12 @@ def _sintetizar(notas: list[tuple[str, str]]) -> SintesisSemanal:
     listado = "\n".join(f"- {titulo}: {snippet}" for titulo, snippet in notas)
     prompt = cargar_prompt("digestor")
     modelo = ChatAnthropic(model=MODELO_DIGESTOR)  # type: ignore[call-arg]
-    salida = modelo.with_structured_output(SintesisSemanal).invoke(
-        f"{prompt}\n\nNotas de esta semana:\n{listado}"
+    salida = costos.extraer(
+        modelo.with_structured_output(SintesisSemanal, include_raw=True).invoke(
+            f"{prompt}\n\nNotas de esta semana:\n{listado}"
+        ),
+        MODELO_DIGESTOR,
+        "digestor",
     )
     assert isinstance(salida, SintesisSemanal)
     return salida

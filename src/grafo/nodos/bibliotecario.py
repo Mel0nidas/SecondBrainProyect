@@ -11,6 +11,7 @@ externo.
 
 from langchain_anthropic import ChatAnthropic
 
+from costos import registro as costos
 from grafo.estado import Estado
 from grafo.utilidades import cargar_prompt
 from rag.indexar import buscar_semantico
@@ -32,6 +33,9 @@ def bibliotecario(estado: Estado) -> dict[str, object]:
     contexto = "\n\n---\n\n".join(snippets)
     respuesta = modelo.invoke(
         f"{prompt}\n\nFragmentos encontrados:\n{contexto}\n\nPregunta: {estado.mensaje_usuario}"
+    )
+    costos.registrar_uso(
+        MODELO_BIBLIOTECARIO, getattr(respuesta, "usage_metadata", None), "bibliotecario"
     )
 
     return {"snippets": snippets, "respuesta_final": str(respuesta.content)}

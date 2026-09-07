@@ -539,6 +539,25 @@ def test_comando_digest_devuelve_el_repaso(
     assert "compras (2)" in texto
 
 
+def test_comando_costos_devuelve_el_resumen(
+    cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUTA_BOVEDA_OBSIDIAN", str(tmp_path))
+    from costos import registro
+
+    registro.registrar_uso("claude-sonnet-4-6", {"input_tokens": 500_000, "output_tokens": 0}, "x")
+
+    with patch("app.main.enviar_mensaje") as enviar_mock:
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/costos"),
+            headers=_headers(),
+        )
+
+    _, texto = enviar_mock.call_args[0]
+    assert "Costos LLM" in texto and "claude-sonnet-4-6" in texto
+
+
 def test_comando_recordatorios_lista_y_cancela(
     cliente: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

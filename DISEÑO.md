@@ -123,7 +123,8 @@ flowchart TD
 - Comando asociado (en el webhook): `/lista` nombra las listas, `/lista <nombre>` la muestra.
 
 **6. Nodo de respuesta directa (sin LLM o con Haiku)**
-- Comandos fijos (`/ayuda`, `/estado`, `/costos`) se responden con texto plantillado. Cero tokens de Sonnet.
+- Comandos fijos (`/ayuda`, `/estado`) se responden con texto plantillado. Cero tokens de Sonnet.
+- `/costos` se resuelve en el webhook (Fase 15): cada llamada a un modelo deja los tokens usados en `90-sistema/costos.jsonl` (helper `costos.registro`, vía `include_raw=True` de LangChain o `usage_metadata`), y el comando los suma por modelo y aplica el precio vigente de Anthropic. El tracking nunca rompe una respuesta: si falla, loguea y sigue.
 
 **DIGESTOR (Fase 14, agente sin nodo)** — no responde a mensajes: lo dispara el loop proactivo una vez por semana (día/hora configurables, default lunes 9). Recorre la bóveda: sintetiza con Sonnet lo capturado en 7 días, lista lo que quedó viejo en `00-inbox/`, y el estado de las listas. Deja el repaso como nota en `90-sistema/` y manda la versión corta por Telegram. `/digest` lo corre a mano. Vive en `src/digestor/`, no en `grafo/nodos/`, porque no es parte del grafo. Se eligió el loop en proceso (no EventBridge) por consistencia con recordatorios y briefing.
 
@@ -302,7 +303,9 @@ Aprovecha la infra de la Fase 10. El nodo Recordatorio ahora saca también la re
 El agente diferido de §2.2, por fin. `src/digestor/`, disparado por el loop proactivo una vez por semana + comando `/digest`. Sin nodo de grafo (no responde a mensajes). Sin tocar el Router → sin eval. De paso, limpieza del repo: se sacaron de git `chroma_index/` y `grafo_checkpoints.sqlite` (artefactos de runtime), y `src/grafo/boveda_local.py` (herramientas falsas de la Fase 2, muertas desde la Fase 3). README reescrito en inglés.
 ✅ *Cada lunes 9am llega un repaso de lo que capturaste la semana + inbox viejo + listas, y queda como nota en `90-sistema/`.*
 
----
+**FASE 15 — Calculador de costos (1 sesión)** — *hecha*
+`/costos` deja de ser un stub. Cada llamada a un modelo (Router/Haiku, agentes/Sonnet, Digestor, y los embeddings de Voyage) registra sus tokens en `90-sistema/costos.jsonl`; el comando suma por modelo de los últimos 30 días y aplica el precio vigente de Anthropic (`costos.registro.PRECIOS`, primera fuente la doc de Anthropic). Muestra también el costo fijo estimado de AWS y aclara que Groq/Voyage están en tier gratuito. El `include_raw=True` para leer `usage_metadata` no cambia ni el request ni la clasificación → sin eval.
+✅ *`/costos` → "Claude Sonnet: 890k in / 45k out → USD 3.35 … Total LLM USD 3.5 … ~USD 0.12/día".*
 
 ## PARTE 6 — EVALUACIÓN (cómo sabemos que funciona)
 

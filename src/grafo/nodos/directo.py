@@ -21,7 +21,7 @@ RESPUESTAS_FIJAS = {
         "Comandos disponibles:\n"
         "/ayuda - muestra este mensaje\n"
         "/estado - en que fase esta el proyecto\n"
-        "/costos - resumen de costos (todavia no implementado de verdad)\n"
+        "/costos - gasto de los ultimos 30 dias por modelo + infra\n"
         "/corregir <intencion> - si clasifique mal el ultimo mensaje, lo\n"
         "  re-archiva y lo anota para la evaluacion. Ej: /corregir tarea\n"
         "/recordatorios - lista los recordatorios pendientes\n"
@@ -42,7 +42,6 @@ RESPUESTAS_FIJAS = {
         "consultas con busqueda semantica, agenda recordatorios (incluso "
         "recurrentes), y manda un briefing cada manana y un repaso cada semana."
     ),
-    "/costos": "Todavia no se trackea el costo real -- llega mas adelante en el plan.",
 }
 
 

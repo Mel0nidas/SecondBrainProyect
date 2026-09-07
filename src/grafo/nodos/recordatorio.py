@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from langchain_anthropic import ChatAnthropic
 
+from costos import registro as costos
 from grafo.estado import Estado, RecordatorioPropuesta
 from grafo.utilidades import cargar_prompt
 from recordatorios import almacen
@@ -41,7 +42,7 @@ def recordatorio(estado: Estado) -> dict[str, object]:
     ahora_local = datetime.now(_tz())
 
     modelo = ChatAnthropic(model=MODELO_RECORDATORIO)  # type: ignore[call-arg]
-    modelo_estructurado = modelo.with_structured_output(RecordatorioPropuesta)
+    modelo_estructurado = modelo.with_structured_output(RecordatorioPropuesta, include_raw=True)
 
     prompt = cargar_prompt("recordatorio")
     contexto = (
@@ -49,7 +50,9 @@ def recordatorio(estado: Estado) -> dict[str, object]:
         f"({_DIAS[ahora_local.weekday()]}).\n\n"
         f"Mensaje del usuario: {estado.mensaje_usuario}"
     )
-    propuesta = modelo_estructurado.invoke(f"{prompt}\n\n{contexto}")
+    propuesta = costos.extraer(
+        modelo_estructurado.invoke(f"{prompt}\n\n{contexto}"), MODELO_RECORDATORIO, "recordatorio"
+    )
     assert isinstance(propuesta, RecordatorioPropuesta)
 
     if not propuesta.entendido or not propuesta.cuando.strip():

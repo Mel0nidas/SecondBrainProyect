@@ -7,6 +7,7 @@ sea el modelo mas barato y rapido.
 
 from langchain_anthropic import ChatAnthropic
 
+from costos import registro as costos
 from grafo.estado import Estado, Intencion, SalidaRouter
 from grafo.utilidades import cargar_prompt
 
@@ -24,11 +25,11 @@ def router(estado: Estado) -> dict[str, object]:
         return {"intencion": Intencion.IMAGEN}
 
     modelo = ChatAnthropic(model=MODELO_ROUTER)  # type: ignore[call-arg]
-    modelo_estructurado = modelo.with_structured_output(SalidaRouter)
+    modelo_estructurado = modelo.with_structured_output(SalidaRouter, include_raw=True)
 
     prompt = cargar_prompt("router")
     entrada = f"{prompt}\n\nMensaje del usuario: {estado.mensaje_usuario}"
-    salida = modelo_estructurado.invoke(entrada)
+    salida = costos.extraer(modelo_estructurado.invoke(entrada), MODELO_ROUTER, "router")
     assert isinstance(salida, SalidaRouter)  # nos aseguramos el tipo para mypy
 
     return {"intencion": salida.clase}

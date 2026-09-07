@@ -9,6 +9,7 @@ hecho, o solo ver la lista.
 
 from langchain_anthropic import ChatAnthropic
 
+from costos import registro as costos
 from grafo.estado import Estado, OperacionLista
 from grafo.utilidades import cargar_prompt
 from mcp_obsidian import operaciones
@@ -25,10 +26,14 @@ def _formato_lista(nombre: str, items: list[str]) -> str:
 
 def tareas(estado: Estado) -> dict[str, object]:
     modelo = ChatAnthropic(model=MODELO_TAREAS)  # type: ignore[call-arg]
-    modelo_estructurado = modelo.with_structured_output(OperacionLista)
+    modelo_estructurado = modelo.with_structured_output(OperacionLista, include_raw=True)
 
     prompt = cargar_prompt("tareas")
-    op = modelo_estructurado.invoke(f"{prompt}\n\nMensaje del usuario: {estado.mensaje_usuario}")
+    op = costos.extraer(
+        modelo_estructurado.invoke(f"{prompt}\n\nMensaje del usuario: {estado.mensaje_usuario}"),
+        MODELO_TAREAS,
+        "tareas",
+    )
     assert isinstance(op, OperacionLista)
 
     lista = op.lista.strip() or "pendientes"

@@ -18,6 +18,7 @@ import mimetypes
 
 from langchain_anthropic import ChatAnthropic
 
+from costos import registro as costos
 from grafo.estado import Estado, NotaImagenPropuesta, NotaPropuesta
 from grafo.utilidades import cargar_prompt
 from mcp_obsidian import operaciones
@@ -35,11 +36,11 @@ def archivista(estado: Estado) -> dict[str, object]:
 
 def _archivar_texto(estado: Estado) -> dict[str, object]:
     modelo = ChatAnthropic(model=MODELO_ARCHIVISTA)  # type: ignore[call-arg]
-    modelo_estructurado = modelo.with_structured_output(NotaPropuesta)
+    modelo_estructurado = modelo.with_structured_output(NotaPropuesta, include_raw=True)
 
     prompt = cargar_prompt("archivista")
     entrada = f"{prompt}\n\nMensaje del usuario: {estado.mensaje_usuario}"
-    propuesta = modelo_estructurado.invoke(entrada)
+    propuesta = costos.extraer(modelo_estructurado.invoke(entrada), MODELO_ARCHIVISTA, "archivista")
     assert isinstance(propuesta, NotaPropuesta)
 
     # El Archivista solo maneja capturas: van todas a 00-inbox/. Las
@@ -100,7 +101,7 @@ def _describir_imagen(estado: Estado, ruta_imagen: str) -> NotaImagenPropuesta:
     tipo_mime = mimetypes.guess_type(ruta_imagen)[0] or "image/jpeg"
 
     modelo = ChatAnthropic(model=MODELO_ARCHIVISTA)  # type: ignore[call-arg]
-    modelo_estructurado = modelo.with_structured_output(NotaImagenPropuesta)
+    modelo_estructurado = modelo.with_structured_output(NotaImagenPropuesta, include_raw=True)
 
     prompt = cargar_prompt("archivista_imagen")
     if estado.mensaje_usuario.strip():
@@ -122,7 +123,9 @@ def _describir_imagen(estado: Estado, ruta_imagen: str) -> NotaImagenPropuesta:
             ],
         }
     ]
-    propuesta = modelo_estructurado.invoke(mensaje)
+    propuesta = costos.extraer(
+        modelo_estructurado.invoke(mensaje), MODELO_ARCHIVISTA, "archivista-imagen"
+    )
     assert isinstance(propuesta, NotaImagenPropuesta)
     return propuesta
 

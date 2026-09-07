@@ -29,6 +29,7 @@ from fastapi import FastAPI, Header, Request
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
+from costos import registro as costos
 from digestor.digestor import generar_digest
 from grafo.estado import Estado, Intencion
 from grafo.grafo import construir_grafo
@@ -479,6 +480,9 @@ def _manejar_lista(texto: str) -> str | None:
         return generar_digest(datetime.now(_tz_usuario())) or (
             "No hay nada para el repaso: ni notas de la semana, ni listas abiertas."
         )
+
+    if limpio == "/costos":
+        return costos.resumen()
 
     return None
 

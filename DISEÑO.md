@@ -216,9 +216,9 @@ segundo-cerebro/
 El grafo y el server de Obsidian corren en el mismo proceso/máquina. stdio es el transporte estándar para ese caso: sin puertos, sin auth extra, sin red. Si algún día el server se separa a otra máquina, el SDK permite cambiar a Streamable HTTP sin reescribir las tools.
 
 ### 4.2 Modelos concretos
-- Router y respuestas plantilladas: `claude-haiku-4-5`.
-- Archivista, Bibliotecario, visión: `claude-sonnet-4-6` (o el Sonnet vigente al momento de construir — verificar en la doc de Anthropic, no asumir).
-- Los nombres de modelo van en config/env, nunca hardcodeados en los nodos.
+- Router: `claude-haiku-4-5` (corre en el 100% de los mensajes → el más barato).
+- Archivista, Bibliotecario, Recordatorio, Tareas, Digestor, visión: `claude-sonnet-5` (desde Fase 15 — antes `claude-sonnet-4-6`; se migró porque Sonnet 5 es más barato, $2/$10 vs $3/$15 por Mtok, y más nuevo). Verificar el Sonnet vigente en la doc de Anthropic al tocar esto.
+- Los nombres van en constantes `MODELO_*` por nodo. *(Deuda: DISEÑO original pedía config/env; hoy son constantes de módulo.)*
 
 ### 4.3 Embeddings y chunking
 - Voyage AI (`voyage-3.5-lite` o el equivalente vigente — verificar al construir), vía API.

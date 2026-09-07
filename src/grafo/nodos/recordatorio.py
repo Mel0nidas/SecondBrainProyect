@@ -18,7 +18,7 @@ from grafo.estado import Estado, RecordatorioPropuesta
 from grafo.utilidades import cargar_prompt
 from recordatorios import almacen
 
-MODELO_RECORDATORIO = "claude-sonnet-4-6"
+MODELO_RECORDATORIO = "claude-sonnet-5"
 
 _DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 

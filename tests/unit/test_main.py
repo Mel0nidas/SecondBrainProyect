@@ -656,4 +656,4 @@ def test_comando_reindexar_llama_a_sincronizar(cliente: TestClient) -> None:
 
     sync_mock.assert_called_once()
     _, texto = enviar_mock.call_args[0]
-    assert "3 nota" in texto and "1 borrada" in texto
+    assert "3 reindexada" in texto and "1 borrada" in texto

@@ -25,7 +25,7 @@ from mcp_obsidian import operaciones
 from mcp_obsidian.cliente import llamar_herramienta
 from rag.indexar import indexar_nota
 
-MODELO_ARCHIVISTA = "claude-sonnet-4-6"
+MODELO_ARCHIVISTA = "claude-sonnet-5"
 
 
 def archivista(estado: Estado) -> dict[str, object]:

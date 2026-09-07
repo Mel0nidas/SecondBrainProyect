@@ -21,7 +21,7 @@ from costos import registro as costos
 from grafo.utilidades import cargar_prompt
 from mcp_obsidian import operaciones
 
-MODELO_DIGESTOR = "claude-sonnet-4-6"
+MODELO_DIGESTOR = "claude-sonnet-5"
 
 DIAS_SEMANA = 7
 DIAS_INBOX_VIEJO = 14

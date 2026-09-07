@@ -16,7 +16,7 @@ from grafo.estado import Estado
 from grafo.utilidades import cargar_prompt
 from rag.indexar import buscar_semantico
 
-MODELO_BIBLIOTECARIO = "claude-sonnet-4-6"
+MODELO_BIBLIOTECARIO = "claude-sonnet-5"
 
 
 def bibliotecario(estado: Estado) -> dict[str, object]:

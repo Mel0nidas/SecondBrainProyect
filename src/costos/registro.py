@@ -25,8 +25,8 @@ RUTA_RELATIVA = "90-sistema/costos.jsonl"
 # El match es por prefijo: "claude-haiku-4-5-20251001" cae en "claude-haiku-4-5".
 PRECIOS: dict[str, tuple[float, float]] = {
     "claude-haiku-4-5": (1.00, 5.00),
-    "claude-sonnet-4-6": (3.00, 15.00),
-    "claude-sonnet-4-5": (3.00, 15.00),
+    "claude-sonnet-5": (2.00, 10.00),
+    "claude-sonnet-4-6": (3.00, 15.00),  # historico: los agentes usaron 4-6 hasta la Fase 15
     "voyage-3.5-lite": (0.02, 0.02),  # 200M tokens gratis en la serie voyage-3
 }
 

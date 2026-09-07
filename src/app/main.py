@@ -18,7 +18,7 @@ import calendar
 import json
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -26,12 +26,13 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, Request
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
 from costos import registro as costos
 from digestor.digestor import generar_digest
-from grafo.estado import Estado, Intencion
+from grafo.estado import Estado, Intencion, Presupuesto
 from grafo.grafo import construir_grafo
 from mcp_obsidian import operaciones
 from rag.indexar import sincronizar_indice
@@ -241,6 +242,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     de cero, sin memoria del anterior.
     """
     with SqliteSaver.from_conn_string(_ruta_checkpoints()) as checkpointer:
+        # Sin esto, LangGraph avisa "Deserializing unregistered type
+        # grafo.estado.Intencion" en cada carga de checkpoint y promete
+        # bloquearlo en una version futura. Con el allowlist explicito, esos
+        # dos tipos propios quedan habilitados y el warning desaparece.
+        checkpointer.serde = JsonPlusSerializer(allowed_msgpack_modules=(Intencion, Presupuesto))
         app.state.grafo = construir_grafo(checkpointer=checkpointer)
         tareas_fondo = [
             asyncio.create_task(_loop_proactivo()),
@@ -367,27 +373,17 @@ def _registrar_correccion(mensaje: str, intencion: Intencion) -> None:
         salida.write(linea + "\n")
 
 
-def _manejar_corregir(texto: str, grafo: Any, config: dict[str, Any]) -> str | None:
-    """Procesa ``/corregir <intencion>``.
-
-    Devuelve el texto de respuesta para Telegram, o ``None`` si el mensaje
-    no era un ``/corregir`` (para que siga el flujo normal del grafo).
-
-    Actua sobre el resultado de la corrida ANTERIOR, leyendo su estado del
-    checkpointer -- por eso se resuelve aca, en el webhook, antes de volver
-    a invocar el grafo.
-    """
-    partes = texto.strip().split()
-    if not partes or partes[0] != "/corregir":
-        return None
-
+def _corregir(intento: str, grafo: Any, config: dict[str, Any]) -> str:
+    """``/corregir <intencion>``: actua sobre la corrida ANTERIOR (lee su
+    estado del checkpointer), por eso se resuelve en el webhook y no en el
+    grafo. Mueve la nota mal archivada y anota el caso para la evaluacion."""
     validas = ", ".join(i.value for i in Intencion)
-    if len(partes) < 2:
+    if not intento:
         return f"Uso: /corregir <intencion>. Opciones: {validas}."
     try:
-        nueva = Intencion(partes[1].lower())
+        nueva = Intencion(intento.lower())
     except ValueError:
-        return f'"{partes[1]}" no es una intencion valida. Opciones: {validas}.'
+        return f'"{intento}" no es una intencion valida. Opciones: {validas}.'
 
     previo = grafo.get_state(config).values
     if not isinstance(previo, dict):
@@ -419,72 +415,86 @@ def _manejar_corregir(texto: str, grafo: Any, config: dict[str, Any]) -> str | N
     return f'Corregido a "{nueva.value}"{antes} y anotado para la evaluacion.{movida}'
 
 
-def _manejar_recordatorios(texto: str) -> str | None:
-    """Procesa ``/recordatorios`` (lista los pendientes) y ``/cancelar <id>``.
+def _cancelar(id_: str) -> str:
+    if not id_:
+        return "Uso: /cancelar <id>."
+    if almacen.marcar_cancelado(id_):
+        return "Recordatorio cancelado."
+    return f"No encontre un recordatorio pendiente con id {id_}."
 
-    Devuelve el texto de respuesta, o ``None`` si el mensaje no era uno de
-    esos comandos.
+
+def _mostrar_lista(nombre: str) -> str:
+    items = operaciones.leer_lista(nombre)
+    if not items:
+        return f'La lista "{nombre}" esta vacia o no existe.'
+    return f"Lista {nombre}:\n" + "\n".join(f"• {i}" for i in items)
+
+
+def _cmd_recordatorios() -> str:
+    pend = sorted(almacen.pendientes(), key=lambda r: r.cuando)
+    if not pend:
+        return "No tenes recordatorios pendientes."
+    tz = _tz_usuario()
+    cada = {"diario": " (cada dia)", "semanal": " (cada semana)", "mensual": " (cada mes)"}
+    return "Recordatorios pendientes:\n" + "\n".join(
+        f"- {r.cuando_dt().astimezone(tz).strftime('%d/%m %H:%M')}  {r.texto}"
+        f"{cada.get(r.repetir, '')}   /cancelar {r.id}"
+        for r in pend
+    )
+
+
+def _cmd_listar_listas() -> str:
+    nombres = operaciones.listar_listas()
+    if not nombres:
+        return (
+            'Todavia no tenes ninguna lista. Deci algo como "compra pan la '
+            'proxima vez que vayas al super".'
+        )
+    return "Tus listas: " + ", ".join(nombres) + ".\nMira una con /lista <nombre>."
+
+
+def _cmd_reindexar() -> str:
+    r = sincronizar_indice()
+    return f"Indice al dia: {r['actualizadas']} reindexada(s), {r['borradas']} borrada(s)."
+
+
+def _cmd_digest() -> str:
+    return generar_digest(datetime.now(_tz_usuario())) or (
+        "No hay nada para el repaso: ni notas de la semana, ni listas abiertas."
+    )
+
+
+# Comandos sin argumento que se resuelven en el webhook, sin pasar por el grafo.
+_COMANDOS_SIMPLES: dict[str, Callable[[], str]] = {
+    "/recordatorios": _cmd_recordatorios,
+    "/lista": _cmd_listar_listas,
+    "/reindexar": _cmd_reindexar,
+    "/digest": _cmd_digest,
+    "/costos": costos.resumen,
+}
+
+
+def _responder_comando(texto: str, grafo: Any, config: dict[str, Any]) -> str | None:
+    """Comandos operativos que se resuelven aca, sin pasar por el grafo.
+
+    Devuelve la respuesta, o ``None`` si el mensaje no era uno de estos
+    comandos (y entonces sigue el flujo normal por el grafo).
     """
     limpio = texto.strip()
+    if not limpio.startswith("/"):
+        return None
+    cmd, _, resto = limpio.partition(" ")
+    resto = resto.strip()
 
-    if limpio == "/recordatorios":
-        pend = sorted(almacen.pendientes(), key=lambda r: r.cuando)
-        if not pend:
-            return "No tenes recordatorios pendientes."
-        tz = _tz_usuario()
-        cada = {"diario": " (cada dia)", "semanal": " (cada semana)", "mensual": " (cada mes)"}
-        lineas = [
-            f"- {r.cuando_dt().astimezone(tz).strftime('%d/%m %H:%M')}  {r.texto}"
-            f"{cada.get(r.repetir, '')}   /cancelar {r.id}"
-            for r in pend
-        ]
-        return "Recordatorios pendientes:\n" + "\n".join(lineas)
+    if cmd == "/corregir":
+        return _corregir(resto, grafo, config)
+    if cmd == "/cancelar":
+        return _cancelar(resto)
+    if cmd == "/lista" and resto:
+        return _mostrar_lista(resto)
 
-    if limpio.startswith("/cancelar "):
-        id_ = limpio.split(maxsplit=1)[1].strip()
-        if almacen.marcar_cancelado(id_):
-            return "Recordatorio cancelado."
-        return f"No encontre un recordatorio pendiente con id {id_}."
-
-    return None
-
-
-def _manejar_lista(texto: str) -> str | None:
-    """Procesa ``/lista`` (nombra las listas) y ``/lista <nombre>`` (la muestra)."""
-    limpio = texto.strip()
-
-    if limpio == "/lista":
-        nombres = operaciones.listar_listas()
-        if not nombres:
-            return (
-                "Todavia no tenes ninguna lista. Deci algo como "
-                '"compra pan la proxima vez que vayas al super".'
-            )
-        return "Tus listas: " + ", ".join(nombres) + ".\nMira una con /lista <nombre>."
-
-    if limpio.startswith("/lista "):
-        nombre = limpio.split(maxsplit=1)[1].strip()
-        items = operaciones.leer_lista(nombre)
-        if not items:
-            return f'La lista "{nombre}" esta vacia o no existe.'
-        return f"Lista {nombre}:\n" + "\n".join(f"• {i}" for i in items)
-
-    if limpio == "/reindexar":
-        r = sincronizar_indice()
-        return (
-            f"Indice al dia: {r['actualizadas']} nota(s) reindexada(s), "
-            f"{r['borradas']} borrada(s)."
-        )
-
-    if limpio == "/digest":
-        return generar_digest(datetime.now(_tz_usuario())) or (
-            "No hay nada para el repaso: ni notas de la semana, ni listas abiertas."
-        )
-
-    if limpio == "/costos":
-        return costos.resumen()
-
-    return None
+    handler = _COMANDOS_SIMPLES.get(limpio)
+    return handler() if handler else None
 
 
 @app.get("/salud")
@@ -531,14 +541,9 @@ def webhook_telegram(
     pausado = bool(grafo.get_state(config).next)
 
     if not pausado:
-        # Comandos operativos que no pasan por el grafo: "/corregir" actua
-        # sobre la corrida anterior (DISEÑO.md §6), "/recordatorios" y
-        # "/cancelar" leen/escriben el almacen de recordatorios.
-        respuesta_op = _manejar_corregir(texto, grafo, config)
-        if respuesta_op is None:
-            respuesta_op = _manejar_recordatorios(texto)
-        if respuesta_op is None:
-            respuesta_op = _manejar_lista(texto)
+        # Comandos operativos (/corregir, /recordatorios, /lista, /digest,
+        # /costos, ...) se resuelven aca sin pasar por el grafo.
+        respuesta_op = _responder_comando(texto, grafo, config)
         if respuesta_op is not None:
             enviar_mensaje(chat_id, respuesta_op)
             return {"ok": True}

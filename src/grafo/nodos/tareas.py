@@ -14,7 +14,7 @@ from grafo.estado import Estado, OperacionLista
 from grafo.utilidades import cargar_prompt
 from mcp_obsidian import operaciones
 
-MODELO_TAREAS = "claude-sonnet-4-6"
+MODELO_TAREAS = "claude-sonnet-5"
 
 
 def _formato_lista(nombre: str, items: list[str]) -> str:

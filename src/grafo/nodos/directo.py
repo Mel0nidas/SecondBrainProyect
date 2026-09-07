@@ -23,7 +23,11 @@ RESPUESTAS_FIJAS = {
         "/estado - en que fase esta el proyecto\n"
         "/costos - resumen de costos (todavia no implementado de verdad)"
     ),
-    "/estado": "Fase 5: FastAPI + Telegram real, corriendo local.",
+    "/estado": (
+        "Corriendo en produccion (AWS, 24/7). Ultima fase entregada: 7.5. "
+        "Entiende texto, fotos y notas de voz por Telegram; consultas con "
+        "busqueda semantica."
+    ),
     "/costos": "Todavia no se trackea el costo real -- llega mas adelante en el plan.",
 }
 
@@ -50,8 +54,5 @@ def directo(estado: Estado) -> dict[str, object]:
 
     if mensaje in RESPUESTAS_FIJAS:
         return {"respuesta_final": RESPUESTAS_FIJAS[mensaje]}
-
-    if estado.intencion is not None and estado.intencion.value == "imagen":
-        return {"respuesta_final": "Todavia no puedo procesar imagenes -- eso llega en la Fase 7."}
 
     return {"respuesta_final": "No entendi bien que necesitas. ¿Podes reformular el mensaje?"}

@@ -27,6 +27,7 @@ from grafo.estado import Estado
 from grafo.grafo import construir_grafo
 from mcp_obsidian import operaciones
 from telegram.cliente import descargar_archivo, enviar_mensaje
+from transcripcion.groq import transcribir
 
 # Se llama ACA, al importar el modulo -- es decir, apenas arranca
 # uvicorn, antes de que se procese ningun pedido. Si se llamara mas
@@ -75,22 +76,68 @@ def _autorizado(chat_id: int, secret_recibido: str | None) -> bool:
     return True
 
 
-def _bajar_foto_si_hay(mensaje: dict[str, Any]) -> str | None:
-    """Si el mensaje trae una foto, la baja y la guarda en la boveda.
+def _bajar_imagen_si_hay(mensaje: dict[str, Any]) -> str | None:
+    """Si el mensaje trae una imagen, la baja y la guarda en la boveda.
 
     Devuelve la ruta relativa dentro de la boveda, o None si el mensaje
-    no traia ninguna foto.
+    no traia ninguna imagen.
 
-    Telegram manda cada foto en varios tamaños, del mas chico al mas
-    grande; se usa el ultimo (el de mayor resolucion) porque es el que
-    da mejor transcripcion al pasarlo por vision.
+    Telegram manda una imagen de dos formas distintas:
+
+    - ``photo``: la foto comprimida (lo normal). Viene en varios tamaños,
+      del mas chico al mas grande; se usa el ultimo (mayor resolucion)
+      porque da mejor transcripcion al pasarlo por vision.
+    - ``document``: la imagen SIN comprimir, cuando el usuario elige
+      "enviar como archivo". Hay que mirar el ``mime_type`` para
+      distinguir una imagen de un PDF o cualquier otro adjunto.
     """
     fotos = mensaje.get("photo")
-    if not fotos:
+    if fotos:
+        datos = descargar_archivo(fotos[-1]["file_id"])
+        return operaciones.guardar_imagen(datos)
+
+    documento = mensaje.get("document") or {}
+    mime = documento.get("mime_type", "")
+    if mime.startswith("image/"):
+        datos = descargar_archivo(documento["file_id"])
+        # "image/svg+xml" -> "svg"; "image/jpeg" se guarda como ".jpg".
+        extension = mime.split("/", 1)[1].split("+", 1)[0]
+        if extension == "jpeg":
+            extension = "jpg"
+        return operaciones.guardar_imagen(datos, extension=extension)
+
+    return None
+
+
+def _transcribir_audio_si_hay(mensaje: dict[str, Any]) -> str | None:
+    """Si el mensaje trae una nota de voz o un audio, lo transcribe.
+
+    Devuelve el texto dicho, o None si no habia audio. De ahi en mas ese
+    texto sigue el mismo camino que si el usuario lo hubiera tipeado
+    (DISEÑO.md §FASE 7.5): no hace falta ningun nodo nuevo.
+
+    - ``voice``: la nota de voz del boton del microfono (OGG/Opus).
+    - ``audio``: un archivo de audio mandado como tal (mp3, m4a, etc.).
+    """
+    audio = mensaje.get("voice") or mensaje.get("audio")
+    if not audio:
         return None
 
-    datos = descargar_archivo(fotos[-1]["file_id"])
-    return operaciones.guardar_imagen(datos)
+    datos = descargar_archivo(audio["file_id"])
+    nombre = audio.get("file_name") or _nombre_audio(audio.get("mime_type", ""))
+    return transcribir(datos, nombre_archivo=nombre)
+
+
+def _nombre_audio(mime_type: str) -> str:
+    """Nombre ficticio con la extension que Groq usa para reconocer el formato.
+
+    Groq mira la extension del nombre, no el contenido: si no coincide con
+    un formato que soporta, rechaza el archivo. Las notas de voz de
+    Telegram (``audio/ogg``) caen en el default.
+    """
+    subtipo = mime_type.rsplit("/", 1)[-1]
+    extension = {"mpeg": "mp3", "mp4": "m4a", "x-m4a": "m4a"}.get(subtipo, "ogg")
+    return f"audio.{extension}"
 
 
 @app.get("/salud")
@@ -119,13 +166,18 @@ def webhook_telegram(
         return {"ok": True}
 
     chat_id = mensaje["chat"]["id"]
-    # Una foto viene sin "text": su pie de foto, si tiene, va en "caption".
-    texto = mensaje.get("text") or mensaje.get("caption") or ""
 
     if not _autorizado(chat_id, x_telegram_bot_api_secret_token):
         return {"ok": True}
 
-    ruta_imagen = _bajar_foto_si_hay(mensaje)
+    ruta_imagen = _bajar_imagen_si_hay(mensaje)
+    transcripcion = _transcribir_audio_si_hay(mensaje)
+
+    # Que texto entra al grafo, por orden de prioridad:
+    #   1. lo que se dijo en un audio, ya transcripto (Fase 7.5)
+    #   2. el texto tipeado
+    #   3. el pie de una foto (va en "caption", no en "text")
+    texto = transcripcion or mensaje.get("text") or mensaje.get("caption") or ""
 
     grafo = request.app.state.grafo
     config = {"configurable": {"thread_id": str(chat_id)}}

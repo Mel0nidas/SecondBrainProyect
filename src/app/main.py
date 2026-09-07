@@ -31,6 +31,7 @@ from langgraph.types import Command
 from grafo.estado import Estado, Intencion
 from grafo.grafo import construir_grafo
 from mcp_obsidian import operaciones
+from rag.indexar import sincronizar_indice
 from recordatorios import almacen
 from telegram.cliente import descargar_archivo, enviar_mensaje
 from transcripcion.groq import transcribir
@@ -39,6 +40,9 @@ logger = logging.getLogger(__name__)
 
 # Cada cuanto el loop revisa si hay recordatorios vencidos.
 INTERVALO_RECORDATORIOS_SEG = 60
+# Cada cuanto se empareja el indice de busqueda con la boveda (notas que
+# Melo edita en Obsidian, listas de tareas). Mas espaciado: es mas pesado.
+INTERVALO_REINDEX_SEG = int(os.environ.get("INTERVALO_REINDEX_SEG", "300"))
 
 # Se llama ACA, al importar el modulo -- es decir, apenas arranca
 # uvicorn, antes de que se procese ningun pedido. Si se llamara mas
@@ -84,10 +88,26 @@ async def _loop_recordatorios() -> None:
         await asyncio.sleep(INTERVALO_RECORDATORIOS_SEG)
 
 
+async def _loop_reindexado() -> None:
+    """Tarea de fondo: empareja el indice de busqueda con la boveda.
+
+    Reindexa lo que Melo edito en Obsidian y las listas de tareas, que
+    nunca pasan por el Archivista. Una excepcion nunca corta el loop.
+    """
+    while True:
+        try:
+            resumen = await asyncio.to_thread(sincronizar_indice)
+            if resumen["actualizadas"] or resumen["borradas"]:
+                logger.info("Indice sincronizado: %s", resumen)
+        except Exception:
+            logger.exception("Fallo la sincronizacion del indice; sigo en el proximo tick")
+        await asyncio.sleep(INTERVALO_REINDEX_SEG)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Arma el grafo UNA sola vez, cuando arranca el servidor, y lanza el
-    loop de recordatorios.
+    """Arma el grafo UNA sola vez, cuando arranca el servidor, y lanza las
+    tareas de fondo (recordatorios y sincronizacion del indice).
 
     El checkpointer de SQLite es lo que permite que ``interrupt()``
     pause una ejecucion y la retome en un pedido HTTP completamente
@@ -97,11 +117,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     with SqliteSaver.from_conn_string(_ruta_checkpoints()) as checkpointer:
         app.state.grafo = construir_grafo(checkpointer=checkpointer)
-        tarea = asyncio.create_task(_loop_recordatorios())
+        tareas_fondo = [
+            asyncio.create_task(_loop_recordatorios()),
+            asyncio.create_task(_loop_reindexado()),
+        ]
         try:
             yield
         finally:
-            tarea.cancel()
+            for tarea in tareas_fondo:
+                tarea.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -322,6 +346,13 @@ def _manejar_lista(texto: str) -> str | None:
         if not items:
             return f'La lista "{nombre}" esta vacia o no existe.'
         return f"Lista {nombre}:\n" + "\n".join(f"• {i}" for i in items)
+
+    if limpio == "/reindexar":
+        r = sincronizar_indice()
+        return (
+            f"Indice al dia: {r['actualizadas']} nota(s) reindexada(s), "
+            f"{r['borradas']} borrada(s)."
+        )
 
     return None
 

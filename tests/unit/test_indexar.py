@@ -117,3 +117,71 @@ def test_reindexar_todo_recorre_la_boveda(monkeypatch: pytest.MonkeyPatch) -> No
     total = indexar.reindexar_todo()
 
     assert total == 2
+
+
+def _boveda_dir() -> Path:
+    import os
+
+    return Path(os.environ["RUTA_BOVEDA_OBSIDIAN"])
+
+
+def test_sincronizar_indice_indexa_lo_nuevo_una_sola_vez() -> None:
+    from mcp_obsidian import operaciones
+
+    operaciones.crear_nota(titulo="Terraza", tags=[], contenido="## Plan\n\nComprar plantas.")
+    (_boveda_dir() / "10-notas").mkdir(parents=True)
+    (_boveda_dir() / "10-notas" / "libre.md").write_text(
+        "# A mano\n\nEsto lo escribi en Obsidian.", encoding="utf-8"
+    )
+
+    primera = indexar.sincronizar_indice()
+    segunda = indexar.sincronizar_indice()
+
+    assert primera == {"actualizadas": 2, "borradas": 0}
+    assert segunda == {"actualizadas": 0, "borradas": 0}
+    assert "Obsidian" in indexar.buscar_semantico("Esto lo escribi en Obsidian.", top_k=1)[0]
+
+
+def test_sincronizar_indice_reindexa_lo_que_cambio() -> None:
+    import os
+
+    nota = _boveda_dir() / "10-notas" / "x.md"
+    nota.parent.mkdir(parents=True)
+    nota.write_text("# X\n\nversion vieja", encoding="utf-8")
+    indexar.sincronizar_indice()
+
+    nota.write_text("# X\n\nversion nueva", encoding="utf-8")
+    os.utime(nota, (nota.stat().st_atime, nota.stat().st_mtime + 10))
+
+    resumen = indexar.sincronizar_indice()
+
+    assert resumen["actualizadas"] == 1
+    encontrados = indexar.buscar_semantico("version nueva", top_k=5)
+    assert sum("version" in e for e in encontrados) == 1
+
+
+def test_sincronizar_indice_borra_lo_que_ya_no_existe() -> None:
+    nota = _boveda_dir() / "10-notas" / "efimera.md"
+    nota.parent.mkdir(parents=True)
+    nota.write_text("# Efimera\n\ncontenido", encoding="utf-8")
+    indexar.sincronizar_indice()
+    assert indexar.buscar_semantico("contenido", top_k=1)
+
+    nota.unlink()
+    resumen = indexar.sincronizar_indice()
+
+    assert resumen["borradas"] == 1
+    assert indexar.buscar_semantico("contenido", top_k=1) == []
+
+
+def test_sincronizar_indice_ignora_90_sistema_y_dotdirs() -> None:
+    sistema = _boveda_dir() / "90-sistema"
+    sistema.mkdir(parents=True)
+    (sistema / "log.md").write_text("# Log\n\nno indexar esto", encoding="utf-8")
+    obsidian = _boveda_dir() / ".obsidian"
+    obsidian.mkdir()
+    (obsidian / "notas.md").write_text("# Config\n\ntampoco", encoding="utf-8")
+
+    resumen = indexar.sincronizar_indice()
+
+    assert resumen == {"actualizadas": 0, "borradas": 0}

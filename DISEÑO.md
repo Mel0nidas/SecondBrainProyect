@@ -66,11 +66,14 @@ stateful de AWS deja pasar el tráfico de retorno). Los relays públicos de
 Syncthing quedan como fallback si esa conexión directa no se logra. En
 cualquier caso el tráfico va cifrado punta a punta — ni el relay ni nadie
 en el medio ve el contenido. Gratis, sin cuenta de terceros.
-*Hueco conocido*: una nota que Melo cree/edite en su Obsidian local y que
-Syncthing suba al server **no queda en el índice de Chroma** (el bot solo
-indexa lo que crea él, en el nodo Archivista). El Bibliotecario no la
-encontraría por búsqueda semántica hasta que se agregue un re-indexado
-(watcher en el server o reindex periódico) — queda para Fase 9.
+*(Resuelto en Fase 12)*: antes, una nota que Melo creara/editara en su
+Obsidian local no entraba al índice de Chroma (el Archivista solo indexa
+lo que crea el bot). Ahora un loop en `app/main.py` corre
+`rag.indexar.sincronizar_indice()` cada ~5 min: compara el mtime de cada
+`.md` de la bóveda contra un manifiesto y reindexa lo que cambió, borra
+del índice lo que ya no existe. También cubre las listas de tareas. Se
+excluye `90-sistema/`, `.obsidian/` y demás. Comando `/reindexar` para
+forzarlo.
 
 ### 2.2 Los agentes (6 nodos de decisión: Router + Archivista + Bibliotecario + Recordatorio + Tareas + directo)
 
@@ -218,7 +221,7 @@ El grafo y el server de Obsidian corren en el mismo proceso/máquina. stdio es e
 ### 4.3 Embeddings y chunking
 - Voyage AI (`voyage-3.5-lite` o el equivalente vigente — verificar al construir), vía API.
 - Chunking: por secciones de markdown (headers) con máximo ~500 tokens por chunk; cada chunk guarda `ruta`, `titulo`, `tags` como metadata en Chroma.
-- Reindexado: incremental — al escribir una nota, el Archivista dispara la indexación de esa nota sola. Un reindex completo existe como script manual.
+- Reindexado: (a) al escribir una nota, el Archivista dispara la indexación de esa nota sola; (b) un loop en `app/main.py` (Fase 12) corre `sincronizar_indice()` cada ~5 min y empareja el índice con la bóveda por mtime (cubre lo que Melo edita en Obsidian y las listas de tareas), con un manifiesto en `RUTA_INDICE_CHROMA/reindex_manifest.json`; (c) `reindexar_todo()` como script manual, para cuando cambia el modelo de embeddings o el chunking.
 
 ### 4.4 Qué NO entra (repetido a propósito, para resistir la tentación)
 PyTorch, TensorFlow, AutoGen, n8n, Workato, UiPath, Redis, Pinecone, frontend web propio, fine-tuning. Justificación completa en el plan tecnológico anterior. Regla: nada de esto entra sin que la evaluación (§6) demuestre una necesidad que el stack actual no cubre.
@@ -285,6 +288,10 @@ Primer paso fuera del patrón puramente reactivo. Intención `recordatorio` en e
 **FASE 11 — Listas de tareas (1 sesión)** — *hecha*
 La intención `tarea` deja el modelo "una nota por tarea" y pasa a **listas con checkboxes** (§2.2, nodo Tareas). Sin tocar el Router (la intención ya existía) → sin re-correr el eval. El Archivista quedó solo para capturas e imágenes. Falta natural-language para *mostrar* una lista (hoy es `/lista <nombre>`); *agregar* y *marcar hecho* sí funcionan hablando normal.
 ✅ *"compra pan y leche la próxima vez que vayas al súper" → aparecen en `20-tareas/compras.md`; "ya compré el pan" lo tacha.*
+
+**FASE 12 — Índice al día con la bóveda (1 sesión)** — *hecha*
+Cierra el hueco de §2.1: lo que Melo edita en Obsidian y las listas de tareas ahora sí son buscables. Loop en `app/main.py` que corre `rag.indexar.sincronizar_indice()` cada ~5 min (compara mtime contra un manifiesto, reindexa lo cambiado, borra lo que ya no existe). Comando `/reindexar` para forzarlo. Sin tocar el Router → sin eval. Ver §4.3.
+✅ *Escribo una nota en Obsidian → a los pocos minutos el Bibliotecario la encuentra por búsqueda semántica.*
 
 ---
 

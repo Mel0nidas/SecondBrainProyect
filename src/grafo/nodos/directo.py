@@ -27,6 +27,7 @@ RESPUESTAS_FIJAS = {
         "/recordatorios - lista los recordatorios pendientes\n"
         "/cancelar <id> - cancela un recordatorio\n"
         "/lista - nombra tus listas; /lista <nombre> - la muestra\n"
+        "/reindexar - fuerza la indexacion de lo que editaste en Obsidian\n"
         "\n"
         'Escribi normal para: agendar un aviso ("recordame X el martes"),\n'
         'o sumar a una lista ("compra pan la proxima vez que vayas al super").'

@@ -494,3 +494,20 @@ def test_comando_lista_sin_ninguna(
 
     _, texto = enviar_mock.call_args[0]
     assert "Todavia no tenes ninguna lista" in texto
+
+
+def test_comando_reindexar_llama_a_sincronizar(cliente: TestClient) -> None:
+    with (
+        patch("app.main.enviar_mensaje") as enviar_mock,
+        patch("app.main.sincronizar_indice") as sync_mock,
+    ):
+        sync_mock.return_value = {"actualizadas": 3, "borradas": 1}
+        cliente.post(
+            "/webhook/telegram",
+            json=_actualizacion(CHAT_ID_AUTORIZADO, "/reindexar"),
+            headers=_headers(),
+        )
+
+    sync_mock.assert_called_once()
+    _, texto = enviar_mock.call_args[0]
+    assert "3 nota" in texto and "1 borrada" in texto

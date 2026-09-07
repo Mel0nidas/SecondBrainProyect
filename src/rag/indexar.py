@@ -19,6 +19,7 @@ los nodos del grafo: Chroma es una libreria embebida, no un servicio
 externo que necesite ese aislamiento.
 """
 
+import json
 import os
 import re
 from pathlib import Path
@@ -32,6 +33,11 @@ from mcp_obsidian import operaciones
 NOMBRE_COLECCION = "notas"
 MODELO_EMBEDDINGS = "voyage-3.5-lite"
 CARACTERES_POR_TOKEN = 4  # aproximacion: no tenemos un contador exacto a mano
+
+# Carpetas de la boveda que NO son conocimiento y no se indexan:
+# logs del sistema, config de Obsidian, marcador de Syncthing, papelera.
+CARPETAS_NO_INDEXABLES = {"90-sistema", ".obsidian", ".stfolder", ".trash"}
+ARCHIVO_MANIFIESTO = "reindex_manifest.json"
 
 
 def ruta_indice() -> Path:
@@ -192,6 +198,80 @@ def reindexar_todo() -> int:
         titulo, tags, cuerpo = _parsear_nota(operaciones.leer_nota(ruta))
         total += indexar_nota(ruta, titulo, tags, cuerpo)
     return total
+
+
+# --- Sincronizacion incremental (Fase 12) --------------------------------
+# El Archivista indexa lo que crea el bot. Pero las notas que Melo escribe
+# en Obsidian (llegan por Syncthing) y las listas de tareas nunca pasaban
+# por ``indexar_nota`` -> el Bibliotecario no las encontraba. Un loop en
+# ``app/main.py`` llama a ``sincronizar_indice`` cada pocos minutos para
+# emparejar el indice con lo que hay en disco.
+
+
+def _ruta_manifiesto() -> Path:
+    return ruta_indice() / ARCHIVO_MANIFIESTO
+
+
+def _leer_manifiesto() -> dict[str, float]:
+    ruta = _ruta_manifiesto()
+    if not ruta.exists():
+        return {}
+    try:
+        crudo = json.loads(ruta.read_text(encoding="utf-8"))
+        return {str(k): float(v) for k, v in crudo.items()}
+    except (json.JSONDecodeError, ValueError, AttributeError):
+        return {}
+
+
+def _escribir_manifiesto(manifiesto: dict[str, float]) -> None:
+    ruta = _ruta_manifiesto()
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    ruta.write_text(json.dumps(manifiesto, indent=2), encoding="utf-8")
+
+
+def _notas_indexables() -> dict[str, float]:
+    """{ruta_relativa: mtime} de las .md de la boveda que si se indexan."""
+    base = operaciones.ruta_boveda()
+    if not base.exists():
+        return {}
+
+    encontradas: dict[str, float] = {}
+    for archivo in base.rglob("*.md"):
+        rel = archivo.relative_to(base)
+        if any(parte in CARPETAS_NO_INDEXABLES or parte.startswith(".") for parte in rel.parts):
+            continue
+        encontradas[rel.as_posix()] = archivo.stat().st_mtime
+    return encontradas
+
+
+def sincronizar_indice() -> dict[str, int]:
+    """Empareja el indice con la boveda: reindexa lo que cambio, borra del
+    indice lo que ya no existe en disco.
+
+    Devuelve ``{"actualizadas": n, "borradas": m}``.
+    """
+    en_disco = _notas_indexables()
+    manifiesto = _leer_manifiesto()
+
+    actualizadas = 0
+    for rel, mtime in en_disco.items():
+        if manifiesto.get(rel) == mtime:
+            continue
+        titulo, tags, cuerpo = _parsear_nota(operaciones.leer_nota(rel))
+        indexar_nota(rel, titulo, tags, cuerpo)
+        manifiesto[rel] = mtime
+        actualizadas += 1
+
+    borradas = 0
+    for rel in list(manifiesto):
+        if rel not in en_disco:
+            _coleccion().delete(where={"ruta": rel})
+            del manifiesto[rel]
+            borradas += 1
+
+    if actualizadas or borradas:
+        _escribir_manifiesto(manifiesto)
+    return {"actualizadas": actualizadas, "borradas": borradas}
 
 
 if __name__ == "__main__":

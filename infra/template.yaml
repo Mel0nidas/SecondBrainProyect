@@ -212,7 +212,21 @@ Resources:
             -o /usr/local/bin/docker-compose
           chmod +x /usr/local/bin/docker-compose
 
-          mkdir -p /opt/segundo-cerebro/data/boveda /opt/segundo-cerebro/data/chroma
+          # --- Swap ---
+          # El t3.micro tiene 1 GB de RAM y viene sin swap. Con el bot,
+          # Chroma y Syncthing conviviendo, un pico de memoria puede
+          # gatillar el OOM killer. 1 GB de swap en disco es barato y
+          # alcanza como red de seguridad.
+          if ! swapon --show | grep -q /swapfile; then
+            dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+            chmod 600 /swapfile
+            mkswap /swapfile
+            swapon /swapfile
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab
+          fi
+
+          mkdir -p /opt/segundo-cerebro/data/boveda /opt/segundo-cerebro/data/chroma \
+                   /opt/segundo-cerebro/data/syncthing-config
 
           # --- Dominio HTTPS automatico: IP elastica -> nombre sslip.io ---
           # Ej: 52.1.2.3 se transforma en 52-1-2-3.sslip.io
@@ -258,6 +272,30 @@ Resources:
                 - caddy_data:/data
               command: caddy run --config /etc/caddyfile
               restart: unless-stopped
+            syncthing:
+              # Sincroniza ./data/boveda (archivos planos que escribe el
+              # bot) contra el Obsidian local de Melo, P2P y cifrado. No
+              # hace falta un Obsidian corriendo aca: Syncthing sincroniza
+              # archivos. Ver DISENO.md 2.1.
+              image: syncthing/syncthing:1
+              hostname: segundo-cerebro-server
+              environment:
+                - PUID=0
+                - PGID=0
+              volumes:
+                - ./data/syncthing-config:/var/syncthing/config
+                - ./data/boveda:/var/syncthing/boveda
+              ports:
+                # GUI: solo localhost de la instancia (se llega por SSM).
+                - "127.0.0.1:8384:8384"
+                # Sync: el Security Group NO abre 22000. La conexion va
+                # por los relays publicos de Syncthing (trafico cifrado
+                # punta a punta). Abrir 22000 aca y en el SG si se quiere
+                # conexion directa.
+                - "22000:22000/tcp"
+                - "22000:22000/udp"
+              mem_limit: 256m
+              restart: unless-stopped
           volumes:
             caddy_data:
           EOF
@@ -271,6 +309,11 @@ Resources:
           cd /opt/segundo-cerebro
           docker-compose pull || true
           docker-compose up -d || true
+
+          # NOTA: si esta instancia se recrea de cero, Syncthing arranca
+          # SIN configurar. Hay que rehacer a mano (una vez) el folder de
+          # la boveda y el emparejamiento con el device de la PC de Melo,
+          # igual que con los secretos. Pasos en CONTEXTO.md.
 
   # ---------------------------------------------------------------------
   # IP fija: sin esto, la IP publica cambiaria en cada reinicio de la

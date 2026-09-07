@@ -49,7 +49,24 @@ flowchart LR
     G -.trazas.-> LS[LangSmith]
 ```
 
-Todo (bóveda, Chroma, SQLite del checkpointer) vive en el mismo servidor/volumen AWS. La compu y el celular de Melo solo sincronizan la bóveda cuando se conectan (decisión previa: Obsidian headless / Self-hosted LiveSync).
+Todo (bóveda, Chroma, SQLite del checkpointer) vive en el mismo servidor/volumen AWS. La compu y el celular de Melo sincronizan la bóveda cuando se conectan.
+
+**Sincronización de la bóveda a los dispositivos — decisión (Fase 7.6): Syncthing.**
+Se evaluaron cuatro opciones (Obsidian headless, Obsidian Sync pago,
+Self-hosted LiveSync + CouchDB, Syncthing). Las tres primeras necesitan
+*algún* Obsidian corriendo en el server para vigilar el filesystem; el bot
+en cambio escribe archivos markdown planos. Syncthing sincroniza archivos
+directamente, así que encaja sin sumar un Obsidian headless ni una base de
+datos. Corre como un contenedor más en el `docker-compose` de la
+instancia, montando `./data/boveda`. La conexión con la PC de Melo va
+**P2P por los relays públicos de Syncthing** (tráfico cifrado punta a
+punta; el relay no puede leer el contenido) — no se abre ningún puerto
+nuevo en el Security Group. Gratis, sin cuenta de terceros.
+*Hueco conocido*: una nota que Melo cree/edite en su Obsidian local y que
+Syncthing suba al server **no queda en el índice de Chroma** (el bot solo
+indexa lo que crea él, en el nodo Archivista). El Bibliotecario no la
+encontraría por búsqueda semántica hasta que se agregue un re-indexado
+(watcher en el server o reindex periódico) — queda para Fase 9.
 
 ### 2.2 Los agentes (diseño cerrado: 4 nodos, 3 son "agentes")
 
@@ -132,7 +149,7 @@ Flujo: foto llega por Telegram → FastAPI la descarga (API de archivos de Teleg
 ### 2.7 Interfaz
 
 - **Única interfaz de usuario: Telegram.** Sin frontend web propio (decisión: no aporta al objetivo y suma mantenimiento).
-- **Capa visual de las notas: Obsidian** en la compu/celular de Melo (sincronizado). Obsidian *es* la UI de lectura rica; el bot es la UI de captura y consulta rápida.
+- **Capa visual de las notas: Obsidian** en la compu/celular de Melo (sincronizado con la bóveda del server vía Syncthing, ver §2.1). Obsidian *es* la UI de lectura rica; el bot es la UI de captura y consulta rápida.
 - **Interfaz de operación/debug: LangSmith** (trazas) + `/estado` y `/costos` por Telegram.
 
 ---
@@ -227,9 +244,13 @@ Cuenta AWS con presupuesto/alarma de facturación configurada ANTES que nada (�
 Flujo completo de §2.6. El webhook baja la foto y la guarda en `30-imagenes/`; al grafo le llega solo la **ruta**, nunca los bytes (el estado se serializa al checkpointer en cada paso, y meterle imágenes en base64 lo haría crecer sin control). El Router hace cortocircuito: si hay foto, la intención es `imagen` sin consultar a Haiku — lo dice la estructura del mensaje de Telegram, no hace falta un modelo para adivinarlo. El webhook acepta la imagen tanto comprimida (campo `photo`) como sin comprimir / "enviada como archivo" (campo `document` con `mime_type` `image/*`).
 ✅ *Foto de una pizarra/apunte por Telegram → nota con transcripción en `30-imagenes/`, encontrable después por búsqueda semántica.*
 
-**FASE 7.5 — Audios (1 sesión)** — *código hecho, falta probar en producción*
+**FASE 7.5 — Audios (1 sesión)** — *terminada y verificada en producción*
 Audio por Telegram → descarga (mismo código que las fotos) → transcripción con Groq (`whisper-large-v3-turbo`, por HTTP directo al endpoint compatible con OpenAI, forzando `language=es`) → el texto entra al grafo como si se hubiera tipeado. **No hace falta ningún agente nuevo**: el Router ya distingue `capturar` de `tarea`, y el Archivista ya sabe guardar. Telegram manda las notas de voz en OGG/Opus, que Whisper acepta sin transcodificar. Cubre el campo `voice` (botón de micrófono) y `audio` (archivo de audio).
 ✅ *Audio hablado por Telegram → nota en la bóveda con lo que se dijo, ruteada correctamente según sea idea o tarea.*
+
+**FASE 7.6 — Sincronización de la bóveda (1 sesión)** — *server hecho; falta emparejar la PC de Melo*
+Contenedor `syncthing` en el `docker-compose` de la instancia, montando `./data/boveda`. Sincroniza P2P contra el Obsidian local de Melo por los relays públicos de Syncthing (sin abrir puertos, tráfico cifrado punta a punta). Se sumó 1 GB de swap a la instancia primero (`t3.micro` = 1 GB RAM, sin swap, y Syncthing suma ~25 MB). Detalle y hueco conocido (índice RAG) en §2.1. La configuración del folder/device es un paso manual único, como los secretos (el `UserData` solo corre al crear la máquina).
+✅ *El bot escribe una nota → aparece en el Obsidian de la PC de Melo en segundos, y al revés.*
 
 **FASE 8 (opcional, para portfolio)**
 Idea a definir cuando se llegue ahí -- por ejemplo, un dominio propio en vez de depender de sslip.io, o migrar a Fargate/ECS mas adelante si el proyecto crece a necesitar mas de una instancia.
@@ -253,7 +274,7 @@ Armar `eval/mensajes.jsonl` (§6) con mensajes reales acumulados durante las fas
 ## PARTE 7 — PRIVACIDAD (los tramos identificados, con decisión)
 
 1. **Datos que pasan por el LLM externo**: aceptado como trade-off consciente para un asistente personal. Mitigación: solo se envía al modelo el mensaje del turno + snippets puntuales (patrón mensajero), nunca la bóveda entera. Desde la fase 7 esto incluye las **fotos**, que van enteras a Claude para que las lea.
-2. **Dónde vive la bóveda**: en el disco de la instancia EC2 de Melo (cuenta propia, volumen EBS cifrado en reposo por defecto). Sincronización a dispositivos por el mecanismo elegido en la decisión de headless. No hay terceros adicionales con acceso al contenido.
+2. **Dónde vive la bóveda**: en el disco de la instancia EC2 de Melo (cuenta propia, volumen EBS cifrado en reposo por defecto). Sincronización a dispositivos por **Syncthing** (ver §2.1): P2P, cifrado punta a punta, sin cuenta de terceros. Los relays públicos de Syncthing enrutan el tráfico pero no pueden descifrarlo. No hay terceros adicionales con acceso al contenido.
 3. **Transcripción de audio (desde fase 7.5)**: un **tercer** proveedor externo (Groq) recibe cada audio que Melo mande. Es un punto de salida de datos que antes no existía — se acepta a conciencia, y queda anotado acá para que la decisión no se pierda. Si en algún momento molesta, la salida es self-hosting de Whisper, que hoy no entra en un `t3.micro`.
 
 ---

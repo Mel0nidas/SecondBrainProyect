@@ -11,10 +11,10 @@ from langchain_anthropic import ChatAnthropic
 
 from costos import registro as costos
 from grafo.estado import Estado, OperacionLista
-from grafo.utilidades import cargar_prompt
+from grafo.utilidades import cargar_prompt, modelo_agentes
 from mcp_obsidian import operaciones
 
-MODELO_TAREAS = "claude-sonnet-5"
+MODELO_TAREAS = modelo_agentes()
 
 
 def _formato_lista(nombre: str, items: list[str]) -> str:

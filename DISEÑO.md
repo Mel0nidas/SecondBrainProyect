@@ -219,7 +219,7 @@ El grafo y el server de Obsidian corren en el mismo proceso/máquina. stdio es e
 ### 4.2 Modelos concretos
 - Router: `claude-haiku-4-5` (corre en el 100% de los mensajes → el más barato).
 - Archivista, Bibliotecario, Recordatorio, Tareas, Digestor, visión: `claude-sonnet-5` (desde Fase 15 — antes `claude-sonnet-4-6`; se migró porque Sonnet 5 es más barato, $2/$10 vs $3/$15 por Mtok, y más nuevo). Verificar el Sonnet vigente en la doc de Anthropic al tocar esto.
-- Los nombres van en constantes `MODELO_*` por nodo. *(Deuda: DISEÑO original pedía config/env; hoy son constantes de módulo.)*
+- Los nombres se resuelven en `grafo.utilidades.modelo_router()` / `modelo_agentes()`: cada nodo guarda su constante `MODELO_*` pero el valor sale del entorno (`MODELO_ROUTER` / `MODELO_AGENTES` en el `.env`), con los de arriba como default. Cambiar de modelo no toca código.
 
 ### 4.3 Embeddings y chunking
 - Voyage AI (`voyage-3.5-lite` o el equivalente vigente — verificar al construir), vía API.
@@ -343,9 +343,7 @@ Lo que queda en la mesa, en orden:
    7.5/7.6. Mandar por Telegram, contra el bot real: un recordatorio
    recurrente, una tarea, una consulta (que la respuesta cite `Fuentes:`)
    y un *"agregale que…"*, y confirmar que llegan.
-2. **Higiene**: autostart de Syncthing en la PC de Melo; `.env` con
-   `MODELO_ROUTER`/`MODELO_AGENTES` en vez de constantes de módulo (deuda
-   §4.2).
+2. **Higiene**: autostart de Syncthing en la PC de Melo.
 3. **Fase 11 pendiente**: lenguaje natural para *mostrar* una lista (hoy
    sólo `/lista <nombre>`).
 4. **Fase 8** (opcional/portfolio): dominio propio en vez de sslip.io.

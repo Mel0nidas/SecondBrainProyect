@@ -9,11 +9,11 @@ from langchain_anthropic import ChatAnthropic
 
 from costos import registro as costos
 from grafo.estado import Estado, Intencion, SalidaRouter
-from grafo.utilidades import cargar_prompt
+from grafo.utilidades import cargar_prompt, modelo_router
 
-# claude-haiku-4-5-20251001 es el modelo Haiku vigente al construir esto
-# (ver DISEÑO.md §4.2 -- verificar en la doc de Anthropic si cambio).
-MODELO_ROUTER = "claude-haiku-4-5-20251001"
+# Nombre del modelo Haiku vigente, con override por entorno (DISEÑO.md
+# §4.2). Verificar en la doc de Anthropic si el Haiku vigente cambio.
+MODELO_ROUTER = modelo_router()
 
 
 def router(estado: Estado) -> dict[str, object]:

@@ -15,10 +15,10 @@ from langchain_anthropic import ChatAnthropic
 
 from costos import registro as costos
 from grafo.estado import Estado, RecordatorioPropuesta
-from grafo.utilidades import cargar_prompt
+from grafo.utilidades import cargar_prompt, modelo_agentes
 from recordatorios import almacen
 
-MODELO_RECORDATORIO = "claude-sonnet-5"
+MODELO_RECORDATORIO = modelo_agentes()
 
 _DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 

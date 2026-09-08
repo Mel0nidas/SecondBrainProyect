@@ -18,10 +18,10 @@ from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 
 from costos import registro as costos
-from grafo.utilidades import cargar_prompt
+from grafo.utilidades import cargar_prompt, modelo_agentes
 from mcp_obsidian import operaciones
 
-MODELO_DIGESTOR = "claude-sonnet-5"
+MODELO_DIGESTOR = modelo_agentes()
 
 DIAS_SEMANA = 7
 DIAS_INBOX_VIEJO = 14

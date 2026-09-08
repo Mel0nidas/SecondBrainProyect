@@ -19,10 +19,10 @@ from langchain_anthropic import ChatAnthropic
 
 from costos import registro as costos
 from grafo.estado import Estado
-from grafo.utilidades import cargar_prompt
+from grafo.utilidades import cargar_prompt, modelo_agentes
 from rag.indexar import Fragmento, buscar_con_fuente
 
-MODELO_BIBLIOTECARIO = "claude-sonnet-5"
+MODELO_BIBLIOTECARIO = modelo_agentes()
 
 
 def _fuentes(fragmentos: list[Fragmento]) -> str:

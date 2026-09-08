@@ -20,12 +20,12 @@ from langchain_anthropic import ChatAnthropic
 
 from costos import registro as costos
 from grafo.estado import Estado, NotaImagenPropuesta, NotaPropuesta
-from grafo.utilidades import cargar_prompt
+from grafo.utilidades import cargar_prompt, modelo_agentes
 from mcp_obsidian import operaciones
 from mcp_obsidian.cliente import llamar_herramienta
 from rag.indexar import indexar_nota
 
-MODELO_ARCHIVISTA = "claude-sonnet-5"
+MODELO_ARCHIVISTA = modelo_agentes()
 
 
 def archivista(estado: Estado) -> dict[str, object]:

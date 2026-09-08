@@ -5,7 +5,13 @@ LISTAS: "compra pan la proxima vez que vayas al super" suma "- [ ] pan" a
 ``20-tareas/compras.md``. Cada lista es una nota markdown; el modelo
 decide a que lista va cada cosa y si el usuario quiere agregar, marcar
 hecho, o solo ver la lista.
+
+Cuando una operacion modifica la lista, se la reindexa en el acto (igual
+que el Archivista con las capturas), para que el Bibliotecario la
+encuentre sin esperar al loop de sincronizacion de ~5 min (Fase 12).
 """
+
+import logging
 
 from langchain_anthropic import ChatAnthropic
 
@@ -13,8 +19,21 @@ from costos import registro as costos
 from grafo.estado import Estado, OperacionLista
 from grafo.utilidades import cargar_prompt, modelo_agentes
 from mcp_obsidian import operaciones
+from rag.indexar import reindexar_nota
+
+logger = logging.getLogger(__name__)
 
 MODELO_TAREAS = modelo_agentes()
+
+
+def _reindexar_lista(nombre: str) -> None:
+    """Reindexa la lista recien tocada. Si falla (tipico: rate limit de
+    Voyage) se loguea y se sigue -- el loop de sincronizacion la levanta
+    despues igual, asi que no vale romper la respuesta al usuario por esto."""
+    try:
+        reindexar_nota(operaciones.ruta_relativa_lista(nombre))
+    except Exception as error:  # noqa: BLE001 -- el reindex nunca debe tumbar la respuesta
+        logger.warning("Reindex de la lista %s pospuesto: %s", nombre, error)
 
 
 def _formato_lista(nombre: str, items: list[str]) -> str:
@@ -41,6 +60,8 @@ def tareas(estado: Estado) -> dict[str, object]:
 
     if op.operacion == "completar":
         marcados, faltantes = operaciones.marcar_en_lista(lista, items)
+        if marcados:
+            _reindexar_lista(lista)
         lineas: list[str] = []
         if marcados:
             lineas.append("Marque: " + ", ".join(marcados) + ".")
@@ -50,7 +71,10 @@ def tareas(estado: Estado) -> dict[str, object]:
         return {"respuesta_final": "\n".join(lineas)}
 
     if op.operacion == "agregar" and items:
+        antes = operaciones.leer_lista(lista)
         abiertos = operaciones.agregar_a_lista(lista, items)
+        if set(abiertos) != set(antes):  # algo se agrego de verdad (no todo duplicado)
+            _reindexar_lista(lista)
         return {
             "respuesta_final": (
                 f"Agregue {', '.join(items)} a {lista}.\n" + _formato_lista(lista, abiertos)

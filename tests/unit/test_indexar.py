@@ -215,6 +215,17 @@ def test_sincronizar_indice_ignora_90_sistema_y_dotdirs() -> None:
     assert resumen == {"actualizadas": 0, "borradas": 0}
 
 
+def test_sincronizar_indice_incluye_las_listas_de_tareas() -> None:
+    """Las listas de 20-tareas/ tambien son buscables (no estan excluidas)."""
+    from mcp_obsidian import operaciones
+
+    operaciones.agregar_a_lista("compras", ["pilas AA", "cinta de papel"])
+
+    assert indexar.sincronizar_indice()["actualizadas"] == 1
+    encontrados = indexar.buscar_semantico("cinta de papel", top_k=3)
+    assert any("cinta de papel" in e for e in encontrados)
+
+
 def test_sincronizar_indice_respeta_el_maximo_por_corrida() -> None:
     carpeta = _boveda_dir() / "10-notas"
     carpeta.mkdir(parents=True)

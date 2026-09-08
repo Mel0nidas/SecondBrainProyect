@@ -129,6 +129,15 @@ def _ruta_lista(nombre: str) -> Path:
     return ruta_boveda() / CARPETA_TAREAS / f"{_slug(nombre)}.md"
 
 
+def ruta_relativa_lista(nombre: str) -> str:
+    """La ruta de la lista relativa a la boveda (ej: "20-tareas/compras.md").
+
+    La usa el nodo Tareas para pedir la reindexacion de la lista que acaba
+    de tocar, con el mismo formato de ruta que usa el resto del indice.
+    """
+    return f"{CARPETA_TAREAS}/{_slug(nombre)}.md"
+
+
 def _items_de(texto: str, solo_abiertos: bool = True) -> list[str]:
     items: list[str] = []
     for linea in texto.splitlines():

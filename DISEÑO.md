@@ -121,6 +121,7 @@ flowchart TD
 - Maneja la intención `tarea` como **listas con checkboxes**, no una nota por tarea. *"comprá pan la próxima vez que vayas al súper"* → `- [ ] pan` en `20-tareas/compras.md`.
 - Del mensaje saca: la operación (`agregar` / `completar` / `mostrar`), a qué lista, y los items. El modelo elige la lista si el usuario no la nombra (`compras` si suena a súper, `pendientes` si no). Las tres operaciones andan hablando normal, incluida `mostrar` (*"qué tengo que comprar"*, *"mostrame la lista del viaje"*) — el Router la distingue de `consultar` por el prompt (§Fase 11).
 - Herramientas (código directo sobre la bóveda, no MCP): `agregar_a_lista`, `marcar_en_lista`, `leer_lista`. Marcar hecho es `- [x]` (queda el historial). No borra líneas.
+- Cuando una operación modifica la lista, el nodo la **reindexa en el acto** (`rag.indexar.reindexar_nota`, mismo patrón que el Archivista con las capturas); si el reindex falla —típico: rate limit de Voyage— se loguea y sigue, y el loop de sincronización de §2.1 la levanta después igual.
 - Comando asociado (en el webhook): `/lista` nombra las listas, `/lista <nombre>` la muestra (atajo; el lenguaje natural hace lo mismo).
 
 **6. Nodo de respuesta directa (sin LLM o con Haiku)**
@@ -289,7 +290,7 @@ Primer paso fuera del patrón puramente reactivo. Intención `recordatorio` en e
 ✅ *"recordame llamar al banco el martes 10am" → el martes a las 10 llega un mensaje del bot.*
 
 **FASE 11 — Listas de tareas (1 sesión)** — *hecha*
-La intención `tarea` deja el modelo "una nota por tarea" y pasa a **listas con checkboxes** (§2.2, nodo Tareas). El Archivista quedó solo para capturas e imágenes. Al principio sólo *agregar* y *marcar hecho* andaban hablando normal; *mostrar* una lista era sólo `/lista <nombre>`. Cerrado el 2026-09-07: se afinó la definición de `tarea` en `router.md` (operar sobre listas *incluye verlas*, con la frontera contra `consultar` explícita) — el nodo Tareas y su prompt ya manejaban `mostrar`. Eval re-corrido con 5 casos nuevos: 34/36 (94.4%), baseline movido.
+La intención `tarea` deja el modelo "una nota por tarea" y pasa a **listas con checkboxes** (§2.2, nodo Tareas). El Archivista quedó solo para capturas e imágenes. Al principio sólo *agregar* y *marcar hecho* andaban hablando normal; *mostrar* una lista era sólo `/lista <nombre>`. Cerrado el 2026-09-07: se afinó la definición de `tarea` en `router.md` (operar sobre listas *incluye verlas*, con la frontera contra `consultar` explícita) — el nodo Tareas y su prompt ya manejaban `mostrar`. Eval re-corrido con 5 casos nuevos: 34/36 (94.4%), baseline movido. Mismo día: el nodo pasa a **reindexar la lista en el acto** al modificarla (antes las listas sólo entraban al índice por el loop de sincronización de la Fase 12, con hasta ~5 min de lag).
 ✅ *"compra pan y leche la próxima vez que vayas al súper" → aparecen en `20-tareas/compras.md`; "ya compré el pan" lo tacha.*
 
 **FASE 12 — Índice al día con la bóveda (1 sesión)** — *hecha*

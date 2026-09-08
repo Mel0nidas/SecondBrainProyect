@@ -15,9 +15,14 @@
 {"mensaje": "como era la receta de pan que anote la semana pasada", "intencion": "consultar", "fuente": "sintetico"}
 {"mensaje": "que dije sobre el presupuesto el mes pasado", "intencion": "consultar", "fuente": "sintetico"}
 {"mensaje": "buscame las notas que tengan que ver con arquitectura de software", "intencion": "consultar", "fuente": "sintetico"}
+{"mensaje": "que ideas guarde para el blog", "intencion": "consultar", "fuente": "sintetico"}
 {"mensaje": "tengo que llamar al contador antes del viernes", "intencion": "tarea", "fuente": "sintetico"}
 {"mensaje": "marca como hecha la tarea de renovar el seguro del auto", "intencion": "tarea", "fuente": "sintetico"}
 {"mensaje": "agregar a pendientes: mandar la factura del mes a administracion", "intencion": "tarea", "fuente": "sintetico"}
+{"mensaje": "que tengo que comprar en el super", "intencion": "tarea", "fuente": "sintetico"}
+{"mensaje": "mostrame la lista de compras", "intencion": "tarea", "fuente": "sintetico"}
+{"mensaje": "que me falta llevar para el viaje", "intencion": "tarea", "fuente": "sintetico"}
+{"mensaje": "que hay en mis pendientes", "intencion": "tarea", "fuente": "sintetico"}
 {"mensaje": "recordame llamar al banco el martes a las 10", "intencion": "recordatorio", "fuente": "sintetico"}
 {"mensaje": "avisame manana a la manana que tengo que mandar la factura", "intencion": "recordatorio", "fuente": "sintetico"}
 {"mensaje": "en 2 horas recordame sacar la ropa del lavarropas", "intencion": "recordatorio", "fuente": "sintetico"}

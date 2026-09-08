@@ -119,9 +119,9 @@ flowchart TD
 
 **5. TAREAS (agente con Sonnet) — Fase 11**
 - Maneja la intención `tarea` como **listas con checkboxes**, no una nota por tarea. *"comprá pan la próxima vez que vayas al súper"* → `- [ ] pan` en `20-tareas/compras.md`.
-- Del mensaje saca: la operación (`agregar` / `completar` / `mostrar`), a qué lista, y los items. El modelo elige la lista si el usuario no la nombra (`compras` si suena a súper, `pendientes` si no).
+- Del mensaje saca: la operación (`agregar` / `completar` / `mostrar`), a qué lista, y los items. El modelo elige la lista si el usuario no la nombra (`compras` si suena a súper, `pendientes` si no). Las tres operaciones andan hablando normal, incluida `mostrar` (*"qué tengo que comprar"*, *"mostrame la lista del viaje"*) — el Router la distingue de `consultar` por el prompt (§Fase 11).
 - Herramientas (código directo sobre la bóveda, no MCP): `agregar_a_lista`, `marcar_en_lista`, `leer_lista`. Marcar hecho es `- [x]` (queda el historial). No borra líneas.
-- Comando asociado (en el webhook): `/lista` nombra las listas, `/lista <nombre>` la muestra.
+- Comando asociado (en el webhook): `/lista` nombra las listas, `/lista <nombre>` la muestra (atajo; el lenguaje natural hace lo mismo).
 
 **6. Nodo de respuesta directa (sin LLM o con Haiku)**
 - Comandos fijos (`/ayuda`, `/estado`) se responden con texto plantillado. Cero tokens de Sonnet.
@@ -289,7 +289,7 @@ Primer paso fuera del patrón puramente reactivo. Intención `recordatorio` en e
 ✅ *"recordame llamar al banco el martes 10am" → el martes a las 10 llega un mensaje del bot.*
 
 **FASE 11 — Listas de tareas (1 sesión)** — *hecha*
-La intención `tarea` deja el modelo "una nota por tarea" y pasa a **listas con checkboxes** (§2.2, nodo Tareas). Sin tocar el Router (la intención ya existía) → sin re-correr el eval. El Archivista quedó solo para capturas e imágenes. Falta natural-language para *mostrar* una lista (hoy es `/lista <nombre>`); *agregar* y *marcar hecho* sí funcionan hablando normal.
+La intención `tarea` deja el modelo "una nota por tarea" y pasa a **listas con checkboxes** (§2.2, nodo Tareas). El Archivista quedó solo para capturas e imágenes. Al principio sólo *agregar* y *marcar hecho* andaban hablando normal; *mostrar* una lista era sólo `/lista <nombre>`. Cerrado el 2026-09-07: se afinó la definición de `tarea` en `router.md` (operar sobre listas *incluye verlas*, con la frontera contra `consultar` explícita) — el nodo Tareas y su prompt ya manejaban `mostrar`. Eval re-corrido con 5 casos nuevos: 34/36 (94.4%), baseline movido.
 ✅ *"compra pan y leche la próxima vez que vayas al súper" → aparecen en `20-tareas/compras.md`; "ya compré el pan" lo tacha.*
 
 **FASE 12 — Índice al día con la bóveda (1 sesión)** — *hecha*
@@ -344,6 +344,4 @@ Lo que queda en la mesa, en orden:
    recurrente, una tarea, una consulta (que la respuesta cite `Fuentes:`)
    y un *"agregale que…"*, y confirmar que llegan.
 2. **Higiene**: autostart de Syncthing en la PC de Melo.
-3. **Fase 11 pendiente**: lenguaje natural para *mostrar* una lista (hoy
-   sólo `/lista <nombre>`).
-4. **Fase 8** (opcional/portfolio): dominio propio en vez de sslip.io.
+3. **Fase 8** (opcional/portfolio): dominio propio en vez de sslip.io.

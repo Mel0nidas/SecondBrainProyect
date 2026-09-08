@@ -1,4 +1,19 @@
-# Evaluación del Router (DISEÑO.md §6)
+# Evaluación (DISEÑO.md §6)
+
+Dos métricas, cada una con su script, su set y su baseline:
+
+| Métrica | Script | Set | Baseline | Mide |
+|---|---|---|---|---|
+| **Router** (principal) | `evaluar.py` | `mensajes.jsonl` | `baseline.json` | tasa de acierto de la intención |
+| **Bibliotecario** (secundaria) | `evaluar_bibliotecario.py` | `consultas_bibliotecario.jsonl` + `corpus_bibliotecario/` | `baseline_bibliotecario.json` | recall@3 de la búsqueda semántica |
+
+Ninguna corre en cada push (pegan a APIs pagas). Las dispara
+`.github/workflows/eval.yml`: a mano desde *Actions*, o en PRs que tocan
+el código del que depende cada una.
+
+---
+
+## Evaluación del Router
 
 El Router es el nodo del que depende todo lo demás: si clasifica mal la
 intención, el mensaje va al agente equivocado. Esto mide su tasa de
@@ -62,3 +77,53 @@ Cuanto más real el set, más sirve el número.
 
 Ningún cambio de prompt o de modelo del Router se mergea sin correr esto.
 El job de CI lo fuerza para los PRs que tocan esos archivos.
+
+---
+
+## Evaluación del Bibliotecario (recall@3)
+
+La contraparte del eval del Router. El del Router mide *a dónde* va el
+mensaje; éste mide que, cuando va al Bibliotecario, la nota que responde
+la pregunta aparezca entre las 3 primeras que trae la búsqueda semántica
+(`rag/indexar.py`: Voyage + Chroma).
+
+```bash
+uv run --env-file .env python -m tests.eval.evaluar_bibliotecario
+```
+
+`--env-file .env` carga `VOYAGE_API_KEY` (mismo detalle del parser que
+arriba: si el `.env` tiene la línea `RUTA_BOVEDA_OBSIDIAN=D:\Second Brain`
+sin comillas, `uv` corta ahí — poné comillas o exportá `VOYAGE_API_KEY` a
+mano). **No** llama al LLM: sólo evalúa recuperación, no cómo redacta el
+Bibliotecario. Gasta 2 requests a Voyage por corrida (todo el corpus en
+una, todas las consultas en otra).
+
+### El corpus y el set
+
+- `corpus_bibliotecario/*.md` — notas fijas, con grupos parecidos a
+  propósito (3 sobre plata, 3 sobre software, 2 viajes, 2 recetas, 2
+  sobre cumpleaños) para que el número pueda bajar si la recuperación se
+  degrada.
+- `consultas_bibliotecario.jsonl` — una línea por consulta:
+  `{"consulta": ..., "nota_esperada": <archivo sin .md>, "fuente": ...}`.
+  Cada consulta usa palabras **distintas** a las de su nota: si bastara
+  un grep, no mediría nada.
+
+Para agregar un caso: escribí la consulta en el `.jsonl` y, si hace
+falta, la nota en `corpus_bibliotecario/`. `evaluar_bibliotecario.py`
+chequea que todo `nota_esperada` exista en el corpus (y hay un test
+unitario que lo verifica sin gastar API).
+
+### El baseline
+
+`baseline_bibliotecario.json` guarda `recall_at_3` (el que corta, margen
+10 pts) y `recall_at_1` (informativo, más sensible pero más ruidoso).
+Re-fijalo junto al cambio que lo justifique:
+
+```bash
+uv run --env-file .env python -m tests.eval.evaluar_bibliotecario --actualizar-baseline
+```
+
+El job `eval-bibliotecario` de CI corre esto en PRs que tocan
+`src/rag/indexar.py`, `src/grafo/nodos/bibliotecario.py` o `tests/eval/**`.
+Necesita `VOYAGE_API_KEY` como secret de GitHub.

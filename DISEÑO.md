@@ -280,9 +280,9 @@ Contenedor `syncthing` en el `docker-compose` de la instancia, montando `./data/
 **FASE 8 (opcional, para portfolio)**
 Idea a definir cuando se llegue ahí -- por ejemplo, un dominio propio en vez de depender de sslip.io, o migrar a Fargate/ECS mas adelante si el proyecto crece a necesitar mas de una instancia.
 
-**FASE 9 — Evaluación + Digestor (2-3 sesiones)** — *harness del Router y `/corregir` hechos; falta el set real y el Digestor*
-Set en `tests/eval/mensajes.jsonl`, runner `tests/eval/evaluar.py`, baseline en `tests/eval/baseline.json`, workflow `eval.yml`, comando `/corregir` + `tests/eval/incorporar.py` para alimentar el set (§6). El set y el baseline se movieron al agregar `recordatorio` (§Fase 10): 28 casos, baseline ~93% (una corrida dio 100% y otra 93% por un caso genuinamente ambiguo — *"recordame comprar el regalo para el cumple de mamá"*, sin hora). Falta: la métrica del Bibliotecario (top-3) y el agente Digestor semanal vía EventBridge.
-✅ *Cambiar un prompt y saber en un comando si mejoró o empeoró.*
+**FASE 9 — Evaluación + Digestor (2-3 sesiones)** — *hecha* (el Digestor terminó siendo la Fase 14)
+Set en `tests/eval/mensajes.jsonl`, runner `tests/eval/evaluar.py`, baseline en `tests/eval/baseline.json`, workflow `eval.yml`, comando `/corregir` + `tests/eval/incorporar.py` para alimentar el set (§6). El set y el baseline se movieron al agregar `recordatorio` (§Fase 10) y `editar` (§Fase 16): hoy 31 casos, baseline 93.5%. **Métrica secundaria del Bibliotecario (recall@3) — hecha**: `tests/eval/evaluar_bibliotecario.py` sobre un corpus fijo (`tests/eval/corpus_bibliotecario/`, 15 notas con grupos parecidos a propósito) y 28 consultas etiquetadas (`consultas_bibliotecario.jsonl`), cada una con vocabulario distinto al de su nota. No llama al LLM: mide sólo recuperación (Voyage + Chroma), 2 requests por corrida. Baseline en `baseline_bibliotecario.json` (recall@3 corta con margen 10 pts; recall@1 informativo). Job `eval-bibliotecario` en `eval.yml`, dispara en PRs que tocan `src/rag/indexar.py` o `src/grafo/nodos/bibliotecario.py`; necesita `VOYAGE_API_KEY` como secret de GitHub.
+✅ *Cambiar un prompt y saber en un comando si mejoró o empeoró; cambiar el chunking/embeddings y saber si la búsqueda empeoró.*
 
 **FASE 10 — Recordatorios / proactividad (1 sesión)** — *hecha*
 Primer paso fuera del patrón puramente reactivo. Intención `recordatorio` en el Router → nodo que resuelve el "cuándo" (relativo a `TZ_USUARIO`) y da de alta el registro en `90-sistema/recordatorios.jsonl`. Un loop en `app/main.py` (cada 60s, mismo proceso, sin EventBridge) revisa vencimientos y manda el aviso por Telegram. `/recordatorios` y `/cancelar <id>` para administrarlos. El eval confirmó que las otras 6 intenciones no se rompieron. Detalle en §2.2.
@@ -317,8 +317,8 @@ El Bibliotecario ahora devuelve la fuente: `rag.indexar.buscar_con_fuente()` tra
 - **Set de prueba**: 20-30 mensajes etiquetados a mano con la intención correcta y (para capturas) la carpeta/tags esperados. Formato JSONL, en `tests/eval/mensajes.jsonl`. Cada caso lleva un campo `fuente` (`real` | `sintetico`). Arranca chico y mayormente sintético; crece con uso real vía `/corregir`.
 - **Métrica principal**: tasa de acierto del Router (es el nodo del que depende todo lo demás). La corre `tests/eval/evaluar.py` contra el Router real (pega a la API de Claude).
 - **Baseline y umbral**: `tests/eval/baseline.json` guarda la última tasa aceptada; una corrida falla si cae más de 5 puntos por debajo (margen para el ruido del modelo). El baseline se re-fija a mano (`--actualizar-baseline`) junto con el cambio que lo justifica.
-- **Métrica secundaria** (todavía no implementada): para consultas, ¿el Bibliotecario trajo la nota correcta en el top-3?
-- **Regla**: ningún cambio de prompt o de modelo del Router se mergea sin correr el set. Lo fuerza el workflow `.github/workflows/eval.yml`, que corre en PRs que tocan `src/grafo/prompts/**`, `router.py` o `estado.py`, y a mano (`workflow_dispatch`). Necesita `ANTHROPIC_API_KEY` como secret de GitHub (es una API key de Anthropic, no una credencial de AWS — la excepción consciente a "sin secrets en GitHub"). Nada de fine-tuning hasta tener meses de datos y una tasa de acierto estancada.
+- **Métrica secundaria** (hecha, Fase 9): para consultas, ¿el Bibliotecario trajo la nota correcta en el top-3? Se mide con `tests/eval/evaluar_bibliotecario.py` contra un corpus fijo (`corpus_bibliotecario/`) y un set de consultas etiquetadas (`consultas_bibliotecario.jsonl`), cada consulta redactada con palabras distintas a las de su nota. No pasa por el LLM: evalúa la recuperación (Voyage + Chroma), no la redacción. `baseline_bibliotecario.json` guarda el recall@3 (corta, margen 10 pts) y el recall@1 (informativo).
+- **Regla**: ningún cambio de prompt o de modelo del Router se mergea sin correr el set; ningún cambio de chunking/embeddings/búsqueda sin correr el del Bibliotecario. Lo fuerza el workflow `.github/workflows/eval.yml` (dos jobs), que corre en PRs que tocan `src/grafo/prompts/**`, `router.py`, `bibliotecario.py`, `estado.py`, `src/rag/indexar.py` o `tests/eval/**`, y a mano (`workflow_dispatch`). Necesita `ANTHROPIC_API_KEY` y `VOYAGE_API_KEY` como secrets de GitHub (son API keys de proveedores, no credenciales de AWS — la excepción consciente a "sin secrets en GitHub"). Nada de fine-tuning hasta tener meses de datos y una tasa de acierto estancada.
 - **Corrección del día a día — comando `/corregir <intencion>`** (hecho): si el Router clasificó mal el último mensaje, `/corregir tarea` (a) mueve la nota que creó el Archivista a la carpeta de la intención correcta y (b) anota el caso para el set de evaluación. Como el contenedor no tiene `tests/`, escribe el caso en `90-sistema/correcciones.jsonl` dentro de la bóveda (que Syncthing lleva a la PC); ahí `tests/eval/incorporar.py` lo mergea al set y Melo lo commitea. El `/corregir` puede *mover* una nota que el bot acaba de crear (op `mover_nota`, disparada a mano, sobre un archivo conocido) — **los agentes siguen sin poder mover ni borrar** (§2.2). La corrección manual alimenta el set; el set corrige los prompts.
 
 ---
@@ -333,4 +333,19 @@ El Bibliotecario ahora devuelve la fuente: `rag.indexar.buscar_con_fuente()` tra
 
 ## PRÓXIMA ACCIÓN CONCRETA
 
-Fase 0. Una sesión: crear el repo, poner este documento en la raíz, y dejar el CI en verde. Nada más que eso.
+Fases 0–16 hechas. El bot está en producción (imágenes, audios, sync,
+recordatorios recurrentes, listas, digestor, costos, citas y edición).
+
+Lo que queda en la mesa, en orden:
+
+1. **Verificar en producción las Fases 10–16.** Se codearon y tienen
+   tests, pero sólo hay constancia de verificación real en prod hasta
+   7.5/7.6. Mandar por Telegram, contra el bot real: un recordatorio
+   recurrente, una tarea, una consulta (que la respuesta cite `Fuentes:`)
+   y un *"agregale que…"*, y confirmar que llegan.
+2. **Higiene**: autostart de Syncthing en la PC de Melo; `.env` con
+   `MODELO_ROUTER`/`MODELO_AGENTES` en vez de constantes de módulo (deuda
+   §4.2).
+3. **Fase 11 pendiente**: lenguaje natural para *mostrar* una lista (hoy
+   sólo `/lista <nombre>`).
+4. **Fase 8** (opcional/portfolio): dominio propio en vez de sslip.io.

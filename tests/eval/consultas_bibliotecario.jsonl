@@ -1,0 +1,40 @@
+// Set de evaluacion del Bibliotecario (DISEÑO.md §6, metrica secundaria).
+// Mide recall@3: dado un corpus fijo (corpus_bibliotecario/), la busqueda
+// semantica (Voyage + Chroma) debe traer la nota correcta entre las 3
+// primeras. Cada consulta usa a proposito palabras DISTINTAS a las de su
+// nota destino -- eso es lo que hace que la busqueda por significado valga
+// mas que un grep. El corpus tiene grupos de notas parecidas a proposito
+// (3 sobre plata, 3 sobre software, 2 viajes, 2 recetas, 2 sobre cumples)
+// para que la metrica pueda bajar si la recuperacion se degrada.
+// Campos: consulta, nota_esperada (nombre de archivo sin .md en
+//         corpus_bibliotecario/), fuente ("real" | "sintetico").
+{"consulta": "che, que habia anotado sobre la plata este mes", "nota_esperada": "presupuesto-gastos", "fuente": "sintetico"}
+{"consulta": "en que estaba gastando de mas ultimamente", "nota_esperada": "presupuesto-gastos", "fuente": "sintetico"}
+{"consulta": "cuanto tenia pensado pedir de aumento", "nota_esperada": "sueldo-negociacion", "fuente": "sintetico"}
+{"consulta": "como encarar la charla con mi jefa por lo que gano", "nota_esperada": "sueldo-negociacion", "fuente": "sintetico"}
+{"consulta": "quien nos cotizaba mas barato las cajas", "nota_esperada": "proveedor-packaging", "fuente": "sintetico"}
+{"consulta": "el contacto nuevo de bolsas y embalaje", "nota_esperada": "proveedor-packaging", "fuente": "sintetico"}
+{"consulta": "como era eso que guarde para hornear", "nota_esperada": "receta-pan", "fuente": "sintetico"}
+{"consulta": "cuanta harina y cuanta agua llevaba la masa", "nota_esperada": "receta-pan", "fuente": "sintetico"}
+{"consulta": "la salsa de tomate como se hacia", "nota_esperada": "receta-salsa", "fuente": "sintetico"}
+{"consulta": "que le ponia para bajarle la acidez al tomate", "nota_esperada": "receta-salsa", "fuente": "sintetico"}
+{"consulta": "la idea del asistente que avisa los aniversarios de la gente", "nota_esperada": "idea-bot-cumples", "fuente": "sintetico"}
+{"consulta": "que le podia regalar a mi vieja para el cumple", "nota_esperada": "regalo-mama", "fuente": "sintetico"}
+{"consulta": "hasta cuando tengo para comprar el regalo de mama", "nota_esperada": "regalo-mama", "fuente": "sintetico"}
+{"consulta": "que libro de historia de la humanidad estaba leyendo", "nota_esperada": "libro-sapiens", "fuente": "sintetico"}
+{"consulta": "cual era la clave para conectarme a internet en el trabajo", "nota_esperada": "wifi-oficina", "fuente": "sintetico"}
+{"consulta": "wifi oficina", "nota_esperada": "wifi-oficina", "fuente": "sintetico"}
+{"consulta": "aquellas notas sobre diseño de sistemas y separacion de capas", "nota_esperada": "arquitectura-hexagonal", "fuente": "sintetico"}
+{"consulta": "la idea de no pegarle a la base de datos en cada pedido", "nota_esperada": "redis-cache", "fuente": "sintetico"}
+{"consulta": "que fue lo que fallo en produccion la ultima vez", "nota_esperada": "bug-produccion", "fuente": "sintetico"}
+{"consulta": "por que se cayo la app, no era algo del pool de conexiones", "nota_esperada": "bug-produccion", "fuente": "sintetico"}
+{"consulta": "que tenia planeado para las vacaciones en asia", "nota_esperada": "viaje-japon", "fuente": "sintetico"}
+{"consulta": "donde queria ir a ver los cerezos en flor", "nota_esperada": "viaje-japon", "fuente": "sintetico"}
+{"consulta": "el viaje al sur para andar en bici por los cerros", "nota_esperada": "viaje-bariloche", "fuente": "sintetico"}
+{"consulta": "cuando tenia que llevar el coche al taller por la correa", "nota_esperada": "auto-service", "fuente": "sintetico"}
+{"consulta": "que decia el mecanico que habia que reemplazar", "nota_esperada": "auto-service", "fuente": "sintetico"}
+// Casos deliberadamente ambiguos: hay mas de una nota razonable. Miden si
+// la nota "mas" correcta al menos entra al top-3 aunque no sea la primera.
+{"consulta": "algo que anote sobre plata y el trabajo", "nota_esperada": "sueldo-negociacion", "fuente": "sintetico"}
+{"consulta": "la nota que hablaba de la base de datos", "nota_esperada": "redis-cache", "fuente": "sintetico"}
+{"consulta": "ideas para el cumpleaños", "nota_esperada": "regalo-mama", "fuente": "sintetico"}

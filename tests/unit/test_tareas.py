@@ -63,6 +63,29 @@ def test_mostrar_devuelve_los_items_abiertos() -> None:
     assert "cargador" in texto and "auriculares" in texto
 
 
+def test_completar_todo_cierra_todos_los_items_abiertos() -> None:
+    operaciones.agregar_a_lista("compras", ["pan", "leche"])
+
+    resultado, _ = _correr(
+        OperacionLista(operacion="completar_todo", lista="compras", items=[]),
+        "ya compre todo",
+    )
+
+    texto = str(resultado["respuesta_final"])
+    assert "pan" in texto and "leche" in texto
+    assert operaciones.leer_lista("compras") == []
+
+
+def test_completar_todo_con_lista_vacia_no_rompe() -> None:
+    resultado, reindex = _correr(
+        OperacionLista(operacion="completar_todo", lista="compras", items=[]),
+        "cerra la lista de compras",
+    )
+
+    assert "vacia" in str(resultado["respuesta_final"])
+    reindex.assert_not_called()
+
+
 def test_completar_algo_que_no_esta_lo_reporta() -> None:
     operaciones.agregar_a_lista("compras", ["pan"])
 

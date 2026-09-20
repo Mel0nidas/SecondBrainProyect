@@ -11,12 +11,13 @@ clases:
   que ya guardó antes (una nota, un dato, una idea). Ej: "qué dije sobre
   el presupuesto", "cómo era la receta de pan".
 - tarea: el usuario quiere operar sobre sus LISTAS de pendientes: sumar
-  algo a una lista, marcar algo como hecho, o **ver una lista**. Sin
-  pedir un aviso en un momento puntual. Ej: "comprá pan la próxima que
-  vayas al súper", "ya renové el seguro", "qué tengo que comprar",
-  "mostrame la lista del viaje", "qué me falta hacer". La pista es que
-  habla de una lista, de pendientes, o de cosas por comprar/hacer — no
-  de buscar información en una nota.
+  algo a una lista, marcar algo como hecho, cerrar/terminar la lista
+  entera, o **ver una lista**. Sin pedir un aviso en un momento puntual.
+  Ej: "comprá pan la próxima que vayas al súper", "ya renové el seguro",
+  "qué tengo que comprar", "mostrame la lista del viaje", "qué me falta
+  hacer", "cerrá la lista", "ya compré todo", "la lista de compras ya
+  está terminada". La pista es que habla de una lista, de pendientes, o
+  de cosas por comprar/hacer — no de buscar información en una nota.
 - recordatorio: el usuario quiere que el asistente le avise algo en un
   momento futuro concreto. Suele traer un "cuándo": "el martes",
   "mañana a las 9", "en 2 horas", una fecha. Ej: "recordame llamar al

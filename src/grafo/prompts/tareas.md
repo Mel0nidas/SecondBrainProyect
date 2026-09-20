@@ -8,8 +8,13 @@ Interpretá el mensaje y devolvé:
   - `agregar`: el usuario quiere sumar una o más cosas a una lista.
     Ej: "comprá pan la próxima vez que vayas al súper", "anotá en la
     lista del viaje: cargador y auriculares".
-  - `completar`: el usuario ya hizo algo y quiere marcarlo. Ej: "ya
-    compré el pan", "marcá auriculares".
+  - `completar`: el usuario ya hizo algo puntual y quiere marcarlo,
+    nombrando qué. Ej: "ya compré el pan", "marcá auriculares".
+  - `completar_todo`: el usuario da por terminada la lista ENTERA, sin
+    nombrar items puntuales. Ej: "ya compré todo", "cerrá la lista",
+    "la lista de compras ya está terminada", "listo, terminé con eso".
+    La pista es que habla de la lista en general, no de una cosa
+    específica.
   - `mostrar`: el usuario solo quiere ver una lista. Ej: "qué tengo que
     comprar", "mostrame la lista del viaje".
 - **lista**: el nombre de la lista, en minúscula y una sola palabra si se
@@ -19,7 +24,8 @@ Interpretá el mensaje y devolvé:
   suelta.
 - **items**: la lista de cosas mencionadas, una por elemento, sin la
   parte del "comprar"/"anotar"/"ya hice". Ej: de "comprá pan, leche y
-  café" → `["pan", "leche", "café"]`. Para `mostrar`, dejá `items` vacío.
+  café" → `["pan", "leche", "café"]`. Para `mostrar` y `completar_todo`,
+  dejá `items` vacío.
 
 Reglas:
 

@@ -70,6 +70,14 @@ def tareas(estado: Estado) -> dict[str, object]:
         lineas.append(_formato_lista(lista, operaciones.leer_lista(lista)))
         return {"respuesta_final": "\n".join(lineas)}
 
+    if op.operacion == "completar_todo":
+        abiertos = operaciones.leer_lista(lista)
+        if not abiertos:
+            return {"respuesta_final": f'La lista "{lista}" ya estaba vacia.'}
+        marcados, _ = operaciones.marcar_en_lista(lista, abiertos)
+        _reindexar_lista(lista)
+        return {"respuesta_final": f"Cerre la lista {lista}: marque " + ", ".join(marcados) + "."}
+
     if op.operacion == "agregar" and items:
         antes = operaciones.leer_lista(lista)
         abiertos = operaciones.agregar_a_lista(lista, items)

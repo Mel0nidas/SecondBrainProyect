@@ -56,6 +56,8 @@ class OperacionLista(BaseModel):
     ``operacion``:
       - ``agregar``: sumar ``items`` a la lista ``lista``.
       - ``completar``: marcar ``items`` como hechos en ``lista``.
+      - ``completar_todo``: cerrar la lista entera (el usuario no nombra
+        items puntuales, solo dice que ya terminó / que la cierre).
       - ``mostrar``: solo mostrar ``lista``.
     ``lista`` nunca viene vacia: si el usuario no la nombra, el modelo
     elige una ("compras" si suena a super, "pendientes" si no).

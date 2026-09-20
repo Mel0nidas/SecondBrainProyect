@@ -8,12 +8,12 @@ Description: >
 Parameters:
   InstanceType:
     Type: String
-    Default: t3.micro
+    Default: t4g.micro
     Description: >
-      Tamano de la instancia. t3.micro alcanza de sobra para ~3 mensajes/dia.
-      Verificar en la consola de AWS si sigue estando en el nivel "Always Free"
-      al momento de deployar -- si no, igual entra comodo en el credito del
-      Free Plan.
+      Tamano de la instancia. t4g.micro (Graviton, arm64) alcanza de sobra
+      para ~3 mensajes/dia y sale 6.13 USD/mes en us-east-1 contra 12.26 del
+      t3.micro en sa-east-1. Si se vuelve a x86 hay que cambiar tambien la
+      AMI y el binario de docker-compose en el UserData, que son arm64.
   RepoDeGitHub:
     Type: String
     Default: SecondBrainProyect
@@ -22,6 +22,18 @@ Parameters:
     Type: String
     Default: Mel0nidas
     Description: Usuario u organizacion de GitHub dueño del repo.
+  CrearProveedorOIDC:
+    Type: String
+    Default: "si"
+    AllowedValues: ["si", "no"]
+    Description: >
+      IAM es global, no regional: el proveedor OIDC de GitHub existe una sola
+      vez por cuenta. El primer stack lo crea ("si"); un stack en otra region
+      lo tiene que referenciar ("no"), o CloudFormation falla con
+      EntityAlreadyExists.
+
+Conditions:
+  HacerProveedorOIDC: !Equals [!Ref CrearProveedorOIDC, "si"]
 
 Resources:
   # ---------------------------------------------------------------------
@@ -32,6 +44,7 @@ Resources:
   # ---------------------------------------------------------------------
   ProveedorOIDCGitHub:
     Type: AWS::IAM::OIDCProvider
+    Condition: HacerProveedorOIDC
     Properties:
       Url: https://token.actions.githubusercontent.com
       ClientIdList:
@@ -47,7 +60,10 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Federated: !Ref ProveedorOIDCGitHub
+              Federated: !If
+                - HacerProveedorOIDC
+                - !Ref ProveedorOIDCGitHub
+                - !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
@@ -193,7 +209,7 @@ Resources:
       # Siempre la AMI de Amazon Linux 2023 mas reciente -- este parametro
       # "magico" lo resuelve AWS al momento del deploy, no hay que buscar
       # ni actualizar un ID de AMI a mano nunca.
-      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}"
       IamInstanceProfile: !Ref PerfilInstancia
       # 20 GB de disco (el default de la AMI son 8, y se llena a los ~9
       # deploys porque cada uno deja la imagen vieja de Docker). 20 GB
@@ -205,6 +221,13 @@ Resources:
             VolumeSize: 20
             VolumeType: gp3
             DeleteOnTermination: true
+            # La boveda entera vive en este disco. La instancia original
+            # quedo SIN cifrar (el cifrado por defecto de la cuenta esta
+            # apagado), contra lo que dicen el README y DISENO.md Parte 7.
+            # Cifrar exige recrear el volumen, asi que se arregla aca.
+            # Sin KmsKeyId usa la clave administrada por AWS (aws/ebs),
+            # que no cuesta el USD 1/mes de una clave propia.
+            Encrypted: true
       SecurityGroupIds:
         - !GetAtt GrupoDeSeguridad.GroupId
       Tags:
@@ -218,7 +241,7 @@ Resources:
           # --- Docker ---
           dnf install -y docker
           systemctl enable --now docker
-          curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+          curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64 \
             -o /usr/local/bin/docker-compose
           chmod +x /usr/local/bin/docker-compose
 
@@ -252,8 +275,13 @@ Resources:
 
           # --- Secretos: se leen de SSM Parameter Store, nunca del template ---
           # (Melo los crea a mano una vez con "aws ssm put-parameter", ver guia)
-          for CLAVE in ANTHROPIC_API_KEY VOYAGE_API_KEY TELEGRAM_BOT_TOKEN \
-                       TELEGRAM_WEBHOOK_SECRET TELEGRAM_CHAT_ID_AUTORIZADO; do
+          # GROQ_API_KEY (transcripcion de audios, Fase 7.5) estaba en SSM
+          # pero faltaba en esta lista: en la instancia original se cargo a
+          # mano en el .env, asi que una instancia nueva se habria quedado
+          # sin transcribir notas de voz.
+          for CLAVE in ANTHROPIC_API_KEY VOYAGE_API_KEY GROQ_API_KEY \
+                       TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET \
+                       TELEGRAM_CHAT_ID_AUTORIZADO; do
             VALOR=$(aws ssm get-parameter --name "/segundo-cerebro/$CLAVE" \
               --with-decryption --query Parameter.Value --output text \
               --region ${AWS::Region} || echo "")

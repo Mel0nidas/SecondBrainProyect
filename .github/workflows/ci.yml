@@ -36,7 +36,10 @@ jobs:
     # Solo en push a main (no en pull requests), y solo si test paso.
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: test
-    runs-on: ubuntu-latest
+    # Runner arm64 NATIVO: la instancia es un t4g.micro (Graviton), asi que
+    # la imagen tiene que ser arm64. Construir aca en arm64 evita emular con
+    # QEMU, que tarda varias veces mas. Es gratis en repos publicos.
+    runs-on: ubuntu-24.04-arm
     permissions:
       # Necesario para que GitHub emita el token OIDC que AWS valida --
       # sin esto, "aws-actions/configure-aws-credentials" no funciona.
